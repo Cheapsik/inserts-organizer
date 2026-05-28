@@ -2,11 +2,13 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useReducer,
   useRef,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import {
   BOX,
   BUILTIN_MODULES,
@@ -56,6 +58,7 @@ import {
   type ConfiguratorCoreState,
   type InsertLayer,
 } from "@/lib/layer-utils";
+import { deserializeConfig } from "@/lib/serialize-config";
 
 export type { InsertLayer, ConfiguratorCoreState } from "@/lib/layer-utils";
 export type ViewMode = "2d" | "3d";
@@ -312,6 +315,41 @@ let storeRef: ConfiguratorStore | null = null;
 
 export function ConfiguratorProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const sharedConfigLoaded = useRef(false);
+
+  useEffect(() => {
+    if (sharedConfigLoaded.current) return;
+    sharedConfigLoaded.current = true;
+
+    const encoded = new URLSearchParams(window.location.search).get("config");
+    if (!encoded) return;
+
+    const shared = deserializeConfig(encoded);
+    if (!shared) return;
+
+    for (const module of shared.customModules) {
+      registerModule(module);
+    }
+
+    dispatch({
+      type: "PATCH",
+      patch: {
+        boxWidth: shared.boxWidth,
+        boxHeight: shared.boxHeight,
+        boxDepth: shared.boxDepth,
+        layers: shared.layers,
+        activeLayerId: shared.activeLayerId,
+        customModules: shared.customModules,
+        selectedInstanceIds: [],
+        selectedDivider: null,
+        hoveredGroupId: null,
+        ghost: null,
+        canvasDrag: null,
+        groupDragOrigins: null,
+      },
+    });
+    toast.success("Configuration loaded from shared link ✓");
+  }, []);
 
   const patch = useCallback((p: Partial<ConfiguratorState>) => {
     dispatch({ type: "PATCH", patch: p });

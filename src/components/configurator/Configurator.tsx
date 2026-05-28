@@ -31,7 +31,9 @@ import {
   getRotatedSize,
   snap,
 } from "@/lib/insert-types";
-import { Boxes, Box as BoxIcon, Layers3, UnfoldVertical } from "lucide-react";
+import { buildShareUrl, extractShareableState, isShareUrlTooLong } from "@/lib/serialize-config";
+import { toast } from "sonner";
+import { Boxes, Box as BoxIcon, Layers3, Link2, UnfoldVertical } from "lucide-react";
 
 const Scene3D = lazy(() =>
   import("@/components/configurator/Scene3D").then((m) => ({ default: m.Scene3D })),
@@ -280,6 +282,7 @@ function ConfiguratorInner() {
             {viewMode === "3d" && (
               <ExplodedViewToggle active={explodedView} onChange={setExplodedView} />
             )}
+            <ShareButton />
           </div>
 
           <div className="hidden items-center gap-3 font-mono text-xs text-muted-foreground md:flex">
@@ -337,6 +340,51 @@ function DragGhostChip() {
     >
       {m.name} · {formatMm(ghost.w)}×{formatMm(ghost.h)}mm
     </div>
+  );
+}
+
+function ShareButton() {
+  const boxWidth = useConfigurator((s) => s.boxWidth);
+  const boxHeight = useConfigurator((s) => s.boxHeight);
+  const boxDepth = useConfigurator((s) => s.boxDepth);
+  const layers = useConfigurator((s) => s.layers);
+  const activeLayerId = useConfigurator((s) => s.activeLayerId);
+  const customModules = useConfigurator((s) => s.customModules);
+
+  const handleShare = async () => {
+    const shareable = extractShareableState({
+      boxWidth,
+      boxHeight,
+      boxDepth,
+      layers,
+      activeLayerId,
+      customModules,
+    });
+    const url = buildShareUrl(shareable);
+
+    if (isShareUrlTooLong(url)) {
+      toast.warning("Configuration too large to share via URL. Try reducing modules.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied to clipboard! 🔗");
+    } catch {
+      toast.error("Could not copy link to clipboard.");
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handleShare()}
+      title="Share configuration link"
+      className="flex items-center gap-1.5 rounded-full border border-panel-border bg-card/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:text-foreground"
+    >
+      <Link2 className="h-3.5 w-3.5" />
+      Share
+    </button>
   );
 }
 
