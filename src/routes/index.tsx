@@ -9,7 +9,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Design custom 3D-printed board game inserts with a precise drag-and-drop configurator. Snap-to-grid layout, real-time pricing, and collision detection.",
+          "Design custom 3D-printed board game inserts with a precise drag-and-drop configurator. Snap-to-grid layout and collision detection.",
       },
     ],
   }),

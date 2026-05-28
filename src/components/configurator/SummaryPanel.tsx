@@ -1,14 +1,21 @@
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Link2, ShoppingCart, Sparkles, Wand2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Link2, Wand2, X } from "lucide-react";
 import { toast } from "sonner";
-import { useConfigurator } from "@/lib/configurator-store";
+import { useConfigurator } from "@/lib/configurator-context";
 import { formatMm, getModule } from "@/lib/insert-types";
+import { resolveLayerHeight } from "@/lib/layer-utils";
 
 export function SummaryPanel() {
   const placed = useConfigurator((s) => s.placed);
+  const allPlaced = useConfigurator((s) => s.allPlaced);
+  const layers = useConfigurator((s) => s.layers);
   const autoPack = useConfigurator((s) => s.autoPack);
   const boxWidth = useConfigurator((s) => s.boxWidth);
   const boxHeight = useConfigurator((s) => s.boxHeight);
+  const boxDepth = useConfigurator((s) => s.boxDepth);
+  const stackHeight = useConfigurator((s) => s.stackHeight);
+  const stackOverflow = useConfigurator((s) => s.stackOverflow);
+  const hasDepthOverflow = useConfigurator((s) => s.hasDepthOverflow);
   const selectedInstanceIds = useConfigurator((s) => s.selectedInstanceIds);
   const mergeSelected = useConfigurator((s) => s.mergeSelected);
   const clearSelection = useConfigurator((s) => s.clearSelection);
@@ -24,7 +31,7 @@ export function SummaryPanel() {
 
   const handleAutoPack = () => {
     if (placed.length === 0) {
-      toast("Nothing to pack — add modules first.");
+      toast("Nothing to pack — add modules to this layer first.");
       return;
     }
     const { unpackedCount } = autoPack();
@@ -37,47 +44,38 @@ export function SummaryPanel() {
     }
   };
 
-  const totalPrice = placed.reduce((s, p) => s + getModule(p.moduleId).price, 0);
-  const usedArea = placed.reduce((s, p) => {
+  const usedArea = allPlaced.reduce((s, p) => {
     const m = getModule(p.moduleId);
     return s + m.width * m.height;
   }, 0);
   const boxArea = boxWidth * boxHeight;
-  const utilization = Math.min(100, (usedArea / boxArea) * 100);
-  const hasOverlaps = placed.some((p) => p.isOverlapping);
-  const hasOutOfBounds = placed.some((p) => p.isOutOfBounds);
-  const canCheckout = placed.length > 0 && !hasOverlaps && !hasOutOfBounds;
+  const utilization = Math.min(100, boxArea > 0 ? (usedArea / boxArea) * 100 : 0);
+  const hasOverlaps = allPlaced.some((p) => p.isOverlapping);
+  const hasOutOfBounds = allPlaced.some((p) => p.isOutOfBounds);
 
-  const breakdown = Object.values(
-    placed.reduce<
-      Record<
-        string,
-        {
-          name: string;
-          count: number;
-          price: number;
-          color: string;
-          width: number;
-          height: number;
-          depth: number;
-        }
-      >
-    >((acc, p) => {
-      const m = getModule(p.moduleId);
-      if (!acc[m.id])
-        acc[m.id] = {
-          name: m.name,
-          count: 0,
-          price: m.price,
-          color: m.color,
-          width: m.width,
-          height: m.height,
-          depth: m.depth,
-        };
-      acc[m.id].count += 1;
-      return acc;
-    }, {}),
-  );
+  const layerLineItems = layers
+    .map((layer) => {
+      const height = resolveLayerHeight(layer);
+      if (layer.placedModules.length === 0) return null;
+      const byModule = layer.placedModules.reduce<Record<string, { name: string; count: number }>>(
+        (acc, p) => {
+          const m = getModule(p.moduleId);
+          if (!acc[m.id]) acc[m.id] = { name: m.name, count: 0 };
+          acc[m.id].count += 1;
+          return acc;
+        },
+        {},
+      );
+      const parts = Object.values(byModule)
+        .map((b) => `${b.name} ×${b.count}`)
+        .join(", ");
+      return {
+        id: layer.id,
+        label: `${layer.name} (${formatMm(height)}mm)`,
+        parts,
+      };
+    })
+    .filter(Boolean) as { id: string; label: string; parts: string }[];
 
   return (
     <aside className="glass-panel flex h-full w-80 shrink-0 flex-col overflow-hidden rounded-2xl">
@@ -89,7 +87,6 @@ export function SummaryPanel() {
       </div>
 
       <div className="space-y-5 p-5">
-        {/* Auto-Pack */}
         <button
           type="button"
           onClick={handleAutoPack}
@@ -132,13 +129,21 @@ export function SummaryPanel() {
           </div>
         )}
 
-        {/* Metrics */}
-        <div className="grid grid-cols-2 gap-3">
-          <Stat label="Modules" value={String(placed.length)} mono />
-          <Stat label="Total" value={`${totalPrice} PLN`} accent mono />
+        <Stat label="Modules" value={String(allPlaced.length)} mono />
+
+        <div className="rounded-lg border border-panel-border bg-card/40 px-3 py-2.5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Stack Height
+          </div>
+          <div
+            className={`mt-0.5 font-mono text-lg font-semibold ${
+              stackOverflow ? "text-destructive" : "text-success"
+            }`}
+          >
+            {formatMm(stackHeight)} / {formatMm(boxDepth)} mm
+          </div>
         </div>
 
-        {/* Utilization */}
         <div>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -166,7 +171,30 @@ export function SummaryPanel() {
           </div>
         </div>
 
-        {/* Status */}
+        {hasDepthOverflow ? (
+          <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="text-xs">
+              <div className="font-semibold text-destructive">Module taller than box</div>
+              <div className="mt-0.5 text-destructive/80">
+                One or more modules exceed the box depth ({formatMm(boxDepth)} mm).
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {stackOverflow ? (
+          <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="text-xs">
+              <div className="font-semibold text-destructive">Stack exceeds box depth</div>
+              <div className="mt-0.5 text-destructive/80">
+                Reduce layer heights or remove layers to fit within {formatMm(boxDepth)} mm.
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {hasOutOfBounds ? (
           <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -183,11 +211,11 @@ export function SummaryPanel() {
             <div className="text-xs">
               <div className="font-semibold text-destructive">Collision detected</div>
               <div className="mt-0.5 text-destructive/80">
-                Resolve overlapping modules to enable checkout.
+                Resolve overlapping modules.
               </div>
             </div>
           </div>
-        ) : placed.length > 0 ? (
+        ) : allPlaced.length > 0 && !stackOverflow && !hasDepthOverflow ? (
           <div className="flex items-start gap-2.5 rounded-lg border border-success/40 bg-success/10 p-3">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
             <div className="text-xs">
@@ -198,63 +226,27 @@ export function SummaryPanel() {
         ) : null}
       </div>
 
-      {/* Breakdown */}
       <div className="flex-1 overflow-y-auto border-t border-panel-border px-5 py-4">
         <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
           Line Items
         </div>
-        {breakdown.length === 0 ? (
+        {layerLineItems.length === 0 ? (
           <div className="rounded-lg border border-dashed border-panel-border p-4 text-center text-xs text-muted-foreground">
             No modules placed yet.
           </div>
         ) : (
-          <ul className="space-y-1.5">
-            {breakdown.map((b) => (
+          <ul className="space-y-2">
+            {layerLineItems.map((item) => (
               <li
-                key={b.name}
-                className="flex items-start justify-between gap-2 rounded-md border border-panel-border bg-card/40 px-3 py-2 text-sm"
+                key={item.id}
+                className="rounded-md border border-panel-border bg-card/40 px-3 py-2 text-sm"
               >
-                <div className="flex min-w-0 flex-1 items-start gap-2.5">
-                  <span
-                    className="mt-1 h-2.5 w-2.5 shrink-0 rounded-sm"
-                    style={{ background: b.color }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-foreground">{b.name}</span>
-                      <span className="font-mono text-xs text-muted-foreground">×{b.count}</span>
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-                      <span>
-                        {formatMm(b.width)}×{formatMm(b.height)}mm
-                      </span>
-                      <span className="text-muted-foreground/40">·</span>
-                      <span className="text-primary/80">↕ {formatMm(b.depth)}mm</span>
-                    </div>
-                  </div>
-                </div>
-                <span className="shrink-0 font-mono text-xs text-foreground">
-                  {b.price * b.count} PLN
-                </span>
+                <div className="text-xs font-semibold text-foreground">{item.label}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">{item.parts}</div>
               </li>
             ))}
           </ul>
         )}
-      </div>
-
-      {/* Checkout */}
-      <div className="border-t border-panel-border p-4">
-        <button
-          disabled={!canCheckout}
-          className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
-            canCheckout
-              ? "btn-primary-glow text-primary-foreground hover:brightness-110 active:scale-[0.98]"
-              : "cursor-not-allowed bg-muted text-muted-foreground"
-          }`}
-        >
-          {canCheckout ? <Sparkles className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
-          {canCheckout ? `Checkout — ${totalPrice} PLN` : "Checkout unavailable"}
-        </button>
       </div>
     </aside>
   );

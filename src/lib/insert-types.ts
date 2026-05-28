@@ -24,11 +24,10 @@ export interface InsertModule {
   width: number;
   /** Footprint height in mm (Y axis, on the 2D canvas) */
   height: number;
-  /** Z-axis depth in mm — used for 3D extrusion + volumetric pricing */
+  /** Z-axis depth in mm — used for 3D extrusion */
   depth: number;
   /** Printed wall thickness in mm (also used for the floor). */
   wallThickness: number;
-  price: number;
   color: string;
   type: ModuleType;
   /** Per-wall U-shaped cutout configuration (module template). */
@@ -64,6 +63,8 @@ export interface PlacedModule {
   /** True when the module's footprint extends past the current workspace
    *  boundaries (e.g. the user shrunk the box). */
   isOutOfBounds?: boolean;
+  /** True when module Z depth exceeds the box depth. */
+  isDepthOverflow?: boolean;
   /** Per-instance finger-slot overrides (falls back to module template). */
   fingerSlots?: FingerSlotsConfig;
   /** Per-instance ramp overrides (falls back to module template). */
@@ -123,33 +124,12 @@ export const snapToGrid = (value: number, snapSize: number = SNAP_MM): number =>
 /** Back-compat alias used by the store / clamp helpers. */
 export const snap = (val: number, grid: number = SNAP_MM): number => snapToGrid(val, grid);
 
-/**
- * Hollow-tray pricing. Approximates the printed material volume as:
- *   floor:  W * L * T
- *   walls:  perimeter * D * T  =  2*(W+L) * D * T
- * Then multiplies by a per-mm³ rate. 5 PLN minimum keeps tiny modules viable.
- */
-export const priceFromVolume = (
-  widthMm: number,
-  heightMm: number,
-  depthMm: number,
-  wallMm: number = DEFAULT_WALL_MM,
-): number => {
-  const floor = widthMm * heightMm * wallMm;
-  const walls = 2 * (widthMm + heightMm) * depthMm * wallMm;
-  return Math.max(5, Math.round((floor + walls) * 0.0002));
-};
-
 const makeBuiltin = (
-  m: Omit<InsertModule, "price" | "wallThickness"> & { wallThickness?: number },
-): InsertModule => {
-  const wallThickness = m.wallThickness ?? DEFAULT_WALL_MM;
-  return {
-    ...m,
-    wallThickness,
-    price: priceFromVolume(m.width, m.height, m.depth, wallThickness),
-  };
-};
+  m: Omit<InsertModule, "wallThickness"> & { wallThickness?: number },
+): InsertModule => ({
+  ...m,
+  wallThickness: m.wallThickness ?? DEFAULT_WALL_MM,
+});
 
 export const BUILTIN_MODULES: InsertModule[] = [
   makeBuiltin({

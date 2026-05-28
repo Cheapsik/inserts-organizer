@@ -2,10 +2,18 @@ import { useDroppable } from "@dnd-kit/core";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { formatMm, getModule, GRID_MM } from "@/lib/insert-types";
-import { useConfigurator } from "@/lib/configurator-store";
+import {
+  formatMm,
+  getModule,
+  getRotatedSize,
+  GRID_MM,
+  type PlacedModule,
+} from "@/lib/insert-types";
+import { useConfigurator } from "@/lib/configurator-context";
+import type { DragGhost } from "@/lib/configurator-context";
 import { toast } from "sonner";
 import { PlacedModuleItem } from "./PlacedModuleItem";
+import { StackHeightBar } from "./StackHeightBar";
 
 export const CANVAS_DROPPABLE_ID = "canvas-droppable";
 
@@ -16,15 +24,23 @@ interface Props {
 
 export function Canvas({ onCanvasRect, onPxPerMm }: Props) {
   const placed = useConfigurator((s) => s.placed);
+  const layers = useConfigurator((s) => s.layers);
+  const activeLayerId = useConfigurator((s) => s.activeLayerId);
   const ghost = useConfigurator((s) => s.ghost);
   const boxWidth = useConfigurator((s) => s.boxWidth);
   const boxHeight = useConfigurator((s) => s.boxHeight);
+  const boxDepth = useConfigurator((s) => s.boxDepth);
+  const resolvedHeights = useConfigurator((s) => s.resolvedHeights);
+  const stackHeight = useConfigurator((s) => s.stackHeight);
+  const overflowingLayerIds = useConfigurator((s) => s.overflowingLayerIds);
   const selectedInstanceIds = useConfigurator((s) => s.selectedInstanceIds);
   const mergeSelected = useConfigurator((s) => s.mergeSelected);
   const clearSelection = useConfigurator((s) => s.clearSelection);
   const { setNodeRef, isOver } = useDroppable({ id: CANVAS_DROPPABLE_ID });
 
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const activeLayer = layers.find((l) => l.id === activeLayerId);
+  const ghostModules = layers.filter((l) => l.id !== activeLayerId).flatMap((l) => l.placedModules);
+
   const innerRef = useRef<HTMLDivElement | null>(null);
   const [pxPerMm, setPxPerMm] = useState(1);
 
@@ -82,9 +98,8 @@ export function Canvas({ onCanvasRect, onPxPerMm }: Props) {
         />
       )}
 
-      <div className="relative flex h-full w-full max-h-full max-w-full items-center justify-center">
+      <div className="relative flex h-full w-full max-h-full max-w-full items-center justify-center gap-4">
         <div
-          ref={wrapperRef}
           className="relative"
           style={{
             aspectRatio: `${boxWidth} / ${boxHeight}`,
@@ -96,6 +111,12 @@ export function Canvas({ onCanvasRect, onPxPerMm }: Props) {
           <div className="absolute -top-6 left-0 right-0 flex items-center justify-center gap-2 font-mono text-[11px] text-muted-foreground">
             <span className="h-px w-8 bg-border" />
             {formatMm(boxWidth)} mm
+            {activeLayer && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="text-primary/90">{activeLayer.name}</span>
+              </>
+            )}
             <span className="h-px w-8 bg-border" />
           </div>
           <div className="absolute -left-12 top-0 bottom-0 flex items-center justify-center font-mono text-[11px] text-muted-foreground [writing-mode:vertical-rl] rotate-180">
@@ -128,6 +149,10 @@ export function Canvas({ onCanvasRect, onPxPerMm }: Props) {
               0,0
             </div>
 
+            {ghostModules.map((p) => (
+              <GhostModuleOutline key={p.instanceId} placed={p} pxPerMm={pxPerMm} />
+            ))}
+
             <AnimatePresence>
               {placed.map((p) => (
                 <PlacedModuleItem key={p.instanceId} placed={p} pxPerMm={pxPerMm} />
@@ -151,8 +176,36 @@ export function Canvas({ onCanvasRect, onPxPerMm }: Props) {
             )}
           </div>
         </div>
+
+        <StackHeightBar
+          boxDepth={boxDepth}
+          layers={layers}
+          resolvedHeights={resolvedHeights}
+          overflowingLayerIds={overflowingLayerIds}
+          stackHeight={stackHeight}
+        />
       </div>
     </div>
+  );
+}
+
+function GhostModuleOutline({ placed, pxPerMm }: { placed: PlacedModule; pxPerMm: number }) {
+  const m = getModule(placed.moduleId);
+  const { w, h } = getRotatedSize(m, placed.rotation);
+  return (
+    <div
+      className="pointer-events-none absolute rounded-md border border-white/20"
+      style={{
+        left: placed.x * pxPerMm,
+        top: placed.y * pxPerMm,
+        width: w * pxPerMm,
+        height: h * pxPerMm,
+        opacity: 0.15,
+        background: "oklch(0.55 0 0 / 0.25)",
+        zIndex: 1,
+      }}
+      aria-hidden
+    />
   );
 }
 
@@ -192,13 +245,7 @@ function MergeActionBar({
   );
 }
 
-function SnapGhost({
-  ghost,
-  pxPerMm,
-}: {
-  ghost: NonNullable<ReturnType<typeof useConfigurator.getState>["ghost"]>;
-  pxPerMm: number;
-}) {
+function SnapGhost({ ghost, pxPerMm }: { ghost: DragGhost; pxPerMm: number }) {
   const m = getModule(ghost.moduleId);
   const bad = ghost.collides;
 

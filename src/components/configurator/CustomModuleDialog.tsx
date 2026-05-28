@@ -17,7 +17,6 @@ import {
   formatMm,
   getModule,
   nextCustomColor,
-  priceFromVolume,
   roundDim,
 } from "@/lib/insert-types";
 import {
@@ -76,10 +75,6 @@ function ModuleFormDialog({
   const h = typeof height === "number" ? height : 0;
   const d = typeof depth === "number" ? depth : 0;
   const t = typeof wallThickness === "number" ? wallThickness : 0;
-  const previewPrice = w > 0 && h > 0 && d > 0 && t > 0 ? priceFromVolume(w, h, d, t) : 0;
-  const materialVolume =
-    w > 0 && h > 0 && d > 0 && t > 0 ? Math.round(w * h * t + 2 * (w + h) * d * t) : 0;
-
   const reset = () => {
     setName(initial?.name ?? "");
     setWidth(initial?.width ?? 60);
@@ -183,21 +178,6 @@ function ModuleFormDialog({
             onChange={setRampConfig}
           />
 
-          <div className="flex items-center justify-between rounded-lg border border-panel-border bg-card/40 px-3 py-2.5">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                Estimated price
-              </div>
-              <div className="font-mono text-lg font-semibold text-gradient">
-                {previewPrice} PLN
-              </div>
-            </div>
-            <div className="text-right text-[11px] text-muted-foreground">
-              <div>Material</div>
-              <div className="font-mono">{materialVolume.toLocaleString()} mm³</div>
-            </div>
-          </div>
-
           {error && (
             <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {error}
@@ -285,23 +265,34 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 /* ---------------- Public dialog wrappers ---------------- */
 
-export function CustomModuleDialog() {
+export function CustomModuleDialog({ compact = false }: { compact?: boolean }) {
   const addCustomModule = useConfigurator((s) => s.addCustomModule);
   const customCount = useConfigurator((s) => s.customModules.length);
 
   return (
     <ModuleFormDialog
       trigger={
-        <button
-          type="button"
-          className="group flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary/70 hover:bg-primary/10"
-        >
-          <Plus className="h-4 w-4" />
-          Create Custom Module
-        </button>
+        compact ? (
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded-md border border-dashed border-primary/40 px-2 py-1 text-[10px] font-medium text-primary transition-colors hover:border-primary/70 hover:bg-primary/10"
+            title="Create custom module"
+          >
+            <Plus className="h-3 w-3" />
+            Custom
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="group flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary/70 hover:bg-primary/10"
+          >
+            <Plus className="h-4 w-4" />
+            Create Custom Module
+          </button>
+        )
       }
       title="Custom Module"
-      description="Define footprint and depth for a bespoke insert. Price is auto-calculated from volume."
+      description="Define footprint and depth for a bespoke insert tray."
       submitLabel="Create Module"
       onSubmit={(values) => addCustomModule({ ...values, color: nextCustomColor(customCount) })}
     />

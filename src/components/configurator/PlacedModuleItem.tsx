@@ -13,7 +13,8 @@ import {
   type FingerSlotsConfig,
 } from "@/lib/finger-slots";
 import { resolveRampConfig, rampGradientAngleCss, type RampConfig } from "@/lib/ramp-config";
-import { useConfigurator } from "@/lib/configurator-store";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useConfigurator } from "@/lib/configurator-context";
 import { groupColorFromId } from "@/lib/merge-groups";
 import { EditPlacedModuleButton } from "./CustomModuleDialog";
 import { ModuleDividers } from "./ModuleDividers";
@@ -75,14 +76,15 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
       ? 30
       : isSelected
         ? 25
-        : placed.isOverlapping || placed.isOutOfBounds
+        : placed.isOverlapping || placed.isOutOfBounds || placed.isDepthOverflow
           ? 20
           : 10,
     touchAction: "none",
     pointerEvents: isInActiveDrag && !isLeadDrag ? "none" : undefined,
   };
 
-  const isInvalid = placed.isOverlapping || placed.isOutOfBounds || dragCollides;
+  const isInvalid =
+    placed.isOverlapping || placed.isOutOfBounds || placed.isDepthOverflow || dragCollides;
   const baseColor = groupAccent ?? m.color;
   const fingerSlots = resolveFingerSlots(placed, m);
   const wallT = placed.wallThickness ?? m.wallThickness;
@@ -95,17 +97,19 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
     ? "border-sky-400 shadow-[0_0_0_1px_oklch(0.72_0.18_255/0.9),inset_0_0_20px_oklch(0.72_0.18_255/0.35)]"
     : dragCollides
       ? "border-destructive shadow-[0_0_24px_-2px_var(--destructive)]"
-      : placed.isOutOfBounds
+      : placed.isDepthOverflow
         ? "border-destructive shadow-[0_0_28px_-2px_var(--destructive)] animate-pulse"
-        : placed.isOverlapping
-          ? "border-destructive shadow-[0_0_24px_-2px_var(--destructive)]"
-          : isGroupHovered
-            ? "border-white/70 shadow-[0_0_18px_-2px_oklch(0.72_0.18_255/0.6)]"
-            : isGrouped
-              ? "border-white/40"
-              : "border-white/25 hover:border-white/60";
+        : placed.isOutOfBounds
+          ? "border-destructive shadow-[0_0_28px_-2px_var(--destructive)] animate-pulse"
+          : placed.isOverlapping
+            ? "border-destructive shadow-[0_0_24px_-2px_var(--destructive)]"
+            : isGroupHovered
+              ? "border-white/70 shadow-[0_0_18px_-2px_oklch(0.72_0.18_255/0.6)]"
+              : isGrouped
+                ? "border-white/40"
+                : "border-white/25 hover:border-white/60";
 
-  return (
+  const moduleEl = (
     <motion.div
       ref={setNodeRef}
       style={style}
@@ -237,6 +241,21 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
       </div>
     </motion.div>
   );
+
+  if (placed.isDepthOverflow) {
+    return (
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>{moduleEl}</TooltipTrigger>
+          <TooltipContent side="top">
+            <p>Module taller than box!</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return moduleEl;
 }
 
 function RampIndicator({
@@ -289,9 +308,7 @@ function FingerSlotIndicators({
         const slot = fingerSlots[wall];
         if (!slot.enabled) return null;
         const canvasEdge = localWallToCanvasEdge(rotation, wall);
-        return (
-          <FingerSlotCutout key={wall} edge={canvasEdge} slot={slot} pxPerMm={pxPerMm} />
-        );
+        return <FingerSlotCutout key={wall} edge={canvasEdge} slot={slot} pxPerMm={pxPerMm} />;
       })}
     </>
   );

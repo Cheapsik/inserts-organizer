@@ -1,9 +1,10 @@
 import { Canvas as R3FCanvas } from "@react-three/fiber";
-import { OrbitControls, Environment } from "@react-three/drei";
+import { Html, OrbitControls, Environment } from "@react-three/drei";
+import { animated, useSpring } from "@react-spring/three";
 import { Base, Geometry, Subtraction } from "@react-three/csg";
 import { Suspense, useEffect, useMemo, type ReactNode } from "react";
 import * as THREE from "three";
-import { getModule, getRotatedSize, type PlacedModule } from "@/lib/insert-types";
+import { formatMm, getModule, getRotatedSize, type PlacedModule } from "@/lib/insert-types";
 import {
   resolveFingerSlots,
   slotAlongWallOffsetMm,
@@ -20,6 +21,13 @@ import {
   resolveRampConfig,
   type RampConfig,
 } from "@/lib/ramp-config";
+import {
+  computeLayerAssembledOffsets,
+  computeLayerExplodedOffsets,
+  EXPLODE_GAP_MM,
+  resolveLayerHeight,
+  type InsertLayer,
+} from "@/lib/layer-utils";
 
 const WALL_3D_TO_LOCAL: Record<TrayWall3D, FingerSlotWallKey> = {
   left: "left",
@@ -27,6 +35,15 @@ const WALL_3D_TO_LOCAL: Record<TrayWall3D, FingerSlotWallKey> = {
   front: "bottom",
   back: "top",
 };
+
+const SCALE = 1 / 10;
+const FLOOR_THICKNESS_MM = 4;
+const DEFAULT_MODULE_H_MM = 40;
+const SPRING_CONFIG = { mass: 1, tension: 170, friction: 26 };
+
+function mmToUnits(mm: number) {
+  return mm * SCALE;
+}
 
 function FingerSlotCutouts({
   slot,
@@ -117,16 +134,6 @@ function TrayWall({
   );
 }
 
-// Convert mm coordinate space (origin top-left, y-down) to a centered 3D scene
-// in arbitrary units. We scale 1 mm = 1 unit / 100 for camera comfort.
-const SCALE = 1 / 10; // 1mm -> 0.1 unit
-const FLOOR_THICKNESS_MM = 4;
-const DEFAULT_MODULE_H_MM = 40;
-
-function mmToUnits(mm: number) {
-  return mm * SCALE;
-}
-
 function createRampWedgeGeometry(
   wall: RampConfig["wall"],
   halfW: number,
@@ -134,7 +141,10 @@ function createRampWedgeGeometry(
   height: number,
 ): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(getRampVertices(wall, halfW, halfL, height), 3));
+  geo.setAttribute(
+    "position",
+    new THREE.BufferAttribute(getRampVertices(wall, halfW, halfL, height), 3),
+  );
   geo.setIndex(getRampIndices(wall));
   geo.computeVertexNormals();
   return geo;
@@ -180,12 +190,50 @@ function TrayFloor({
   );
 }
 
-/**
- * Hollow open-top tray built from 5 box meshes (floor + 4 walls).
- * The group origin sits on the inside of the box floor (y=0), so
- * positioning matches the 2D placement reference (top-left in mm).
- */
-function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: number }) {
+function TrayMaterial({
+  displayColor,
+  isOverlapping,
+  stackOverflow,
+  inactiveLayer,
+}: {
+  displayColor: string;
+  isOverlapping: boolean;
+  stackOverflow: boolean;
+  inactiveLayer: boolean;
+}) {
+  const color = useMemo(() => new THREE.Color(displayColor), [displayColor]);
+  const overflowEmissive = useMemo(() => new THREE.Color("#ff2200"), []);
+
+  const emissive = stackOverflow ? overflowEmissive : color;
+  const emissiveIntensity = stackOverflow ? 0.3 : isOverlapping ? 0.45 : 0.04;
+
+  return (
+    <meshStandardMaterial
+      color={color}
+      roughness={0.55}
+      metalness={0.08}
+      emissive={emissive}
+      emissiveIntensity={emissiveIntensity}
+      transparent={inactiveLayer}
+      opacity={inactiveLayer ? 0.35 : 1}
+      depthWrite={!inactiveLayer}
+    />
+  );
+}
+
+function InsertTray3D({
+  p,
+  boxW,
+  boxH,
+  stackOverflow,
+  inactiveLayer,
+}: {
+  p: PlacedModule;
+  boxW: number;
+  boxH: number;
+  stackOverflow: boolean;
+  inactiveLayer: boolean;
+}) {
   const m = getModule(p.moduleId);
   const localW = m.width;
   const localH = m.height;
@@ -209,20 +257,14 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
   const z3 = mmToUnits(cy - boxH / 2);
   const y3 = mmToUnits(FLOOR_THICKNESS_MM / 2);
 
-  const color = useMemo(() => new THREE.Color(displayColor), [displayColor]);
-  const emissiveIntensity = p.isOverlapping ? 0.45 : 0.04;
-
-  const dividerMaterial = (
-    <meshStandardMaterial
-      color={color}
-      roughness={0.55}
-      metalness={0.08}
-      emissive={color}
-      emissiveIntensity={emissiveIntensity}
+  const material = (
+    <TrayMaterial
+      displayColor={displayColor}
+      isOverlapping={p.isOverlapping}
+      stackOverflow={stackOverflow}
+      inactiveLayer={inactiveLayer}
     />
   );
-
-  const material = dividerMaterial;
 
   const rotY = -(p.rotation * Math.PI) / 180;
   const dividers = p.dividers ?? [];
@@ -249,7 +291,6 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
         rampConfig={rampConfig}
         material={material}
       />
-      {/* Left wall */}
       <TrayWall
         position={[-W / 2 + T / 2, D / 2, 0]}
         size={[T, D, L]}
@@ -258,7 +299,6 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
         wallLenMm={localH}
         lengthAxis="z"
       />
-      {/* Right wall */}
       <TrayWall
         position={[W / 2 - T / 2, D / 2, 0]}
         size={[T, D, L]}
@@ -267,7 +307,6 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
         wallLenMm={localH}
         lengthAxis="z"
       />
-      {/* Front wall */}
       <TrayWall
         position={[0, D / 2, L / 2 - T / 2]}
         size={[W - 2 * T, D, T]}
@@ -276,7 +315,6 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
         wallLenMm={localW - 2 * tMm}
         lengthAxis="x"
       />
-      {/* Back wall */}
       <TrayWall
         position={[0, D / 2, -L / 2 + T / 2]}
         size={[W - 2 * T, D, T]}
@@ -300,7 +338,7 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
               receiveShadow
             >
               <boxGeometry args={[innerWidthU, divH, divT]} />
-              {dividerMaterial}
+              {material}
             </mesh>
           );
         }
@@ -314,7 +352,7 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
             receiveShadow
           >
             <boxGeometry args={[divT, divH, innerLengthU]} />
-            {dividerMaterial}
+            {material}
           </mesh>
         );
       })}
@@ -322,56 +360,287 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
   );
 }
 
+const WALL_MATERIAL = (
+  <meshStandardMaterial color="#1a1a2e" transparent opacity={0.4} roughness={0.5} metalness={0.1} />
+);
+
 function BoxContainer({ boxW, boxH, boxD }: { boxW: number; boxH: number; boxD: number }) {
   const W = mmToUnits(boxW);
   const D = mmToUnits(boxH);
   const wallH = mmToUnits(boxD);
-  const floorT = mmToUnits(FLOOR_THICKNESS_MM);
   const wallT = mmToUnits(3);
+
+  const walls: { p: [number, number, number]; s: [number, number, number] }[] = [
+    { p: [0, wallH / 2, -D / 2 - wallT / 2], s: [W + wallT * 2, wallH, wallT] },
+    { p: [0, wallH / 2, D / 2 + wallT / 2], s: [W + wallT * 2, wallH, wallT] },
+    { p: [-W / 2 - wallT / 2, wallH / 2, 0], s: [wallT, wallH, D] },
+    { p: [W / 2 + wallT / 2, wallH / 2, 0], s: [wallT, wallH, D] },
+  ];
 
   return (
     <group>
-      {/* Floor */}
-      <mesh position={[0, -floorT / 2, 0]} receiveShadow>
-        <boxGeometry args={[W, floorT, D]} />
-        <meshStandardMaterial color="#1a1f2e" roughness={0.8} metalness={0.2} />
-      </mesh>
-
-      {/* Grid on floor */}
       <gridHelper
         args={[Math.max(W, D), Math.max(boxW, boxH) / 10, "#3b4658", "#252b39"]}
         position={[0, 0.001, 0]}
       />
-
-      {/* Walls (semi-transparent) */}
-      {[
-        { p: [0, wallH / 2, -D / 2 - wallT / 2], s: [W + wallT * 2, wallH, wallT] },
-        { p: [0, wallH / 2, D / 2 + wallT / 2], s: [W + wallT * 2, wallH, wallT] },
-        { p: [-W / 2 - wallT / 2, wallH / 2, 0], s: [wallT, wallH, D] },
-        { p: [W / 2 + wallT / 2, wallH / 2, 0], s: [wallT, wallH, D] },
-      ].map((wall, i) => (
-        <mesh key={i} position={wall.p as [number, number, number]} castShadow>
-          <boxGeometry args={wall.s as [number, number, number]} />
-          <meshPhysicalMaterial
-            color="#7d8aa3"
-            transparent
-            opacity={0.18}
-            roughness={0.1}
-            metalness={0.2}
-            transmission={0.6}
-            thickness={0.5}
-          />
+      {walls.map((wall, i) => (
+        <mesh key={i} position={wall.p} receiveShadow>
+          <boxGeometry args={wall.s} />
+          {WALL_MATERIAL}
         </mesh>
       ))}
     </group>
   );
 }
 
-export function Scene3D() {
-  const placed = useConfigurator((s) => s.placed);
+function CeilingLimit({ boxW, boxH, boxD }: { boxW: number; boxH: number; boxD: number }) {
+  const W = mmToUnits(boxW);
+  const D = mmToUnits(boxH);
+  const y = mmToUnits(boxD);
+  const thin = mmToUnits(0.5);
+
+  return (
+    <mesh position={[0, y, 0]}>
+      <boxGeometry args={[W, thin, D]} />
+      <meshStandardMaterial
+        color="#ff2200"
+        transparent
+        opacity={0.25}
+        emissive="#ff2200"
+        emissiveIntensity={0.2}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+const GAP_LINE_COLOR = "#6688cc";
+
+/**
+ * Thin cross + height label in the center of the explode gap below layer[i].
+ * Placed at mid-gap (not on module tops) so it stays in empty space as layers move up.
+ */
+function LayerGapMarker({
+  index,
+  assembledY,
+  explodedY,
+  resolvedHeight,
+  layerName,
+  exploded,
+  boxW,
+  boxH,
+}: {
+  index: number;
+  assembledY: number;
+  explodedY: number;
+  resolvedHeight: number;
+  layerName: string;
+  exploded: boolean;
+  boxW: number;
+  boxH: number;
+}) {
+  const targetLayerY = mmToUnits(exploded ? explodedY : assembledY);
+  const { y: layerSpringY } = useSpring({
+    y: targetLayerY,
+    config: SPRING_CONFIG,
+    delay: index * 80,
+  });
+
+  const resolvedU = mmToUnits(resolvedHeight);
+  const gapHalfU = mmToUnits(EXPLODE_GAP_MM / 2);
+  const W = mmToUnits(boxW);
+  const D = mmToUnits(boxH);
+
+  const crossGeometry = useMemo(() => {
+    const positions = [
+      -W / 2, 0, 0, W / 2, 0, 0,
+      0, 0, -D / 2, 0, 0, D / 2,
+    ];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    return geo;
+  }, [W, D]);
+
+  useEffect(() => () => crossGeometry.dispose(), [crossGeometry]);
+
+  if (!exploded) return null;
+
+  return (
+    <animated.group position-y={layerSpringY.to((v) => v + resolvedU + gapHalfU)}>
+      <lineSegments geometry={crossGeometry} raycast={() => null} renderOrder={5}>
+        <lineBasicMaterial
+          color={GAP_LINE_COLOR}
+          transparent
+          opacity={0.6}
+          depthWrite={false}
+          depthTest={false}
+        />
+      </lineSegments>
+      <Html position={[0, 0, 0]} center distanceFactor={14} zIndexRange={[100, 0]}>
+        <div className="pointer-events-none whitespace-nowrap rounded border border-[#6688cc]/40 bg-card/90 px-2 py-0.5 font-mono text-[10px] text-[#9ab4e8] shadow-md backdrop-blur">
+          {layerName} · {formatMm(resolvedHeight)} mm
+        </div>
+      </Html>
+    </animated.group>
+  );
+}
+
+function LayerGroup3D({
+  layer,
+  index,
+  assembledY,
+  explodedY,
+  resolvedHeight,
+  exploded,
+  isActive,
+  isStackOverflow,
+  boxW,
+  boxH,
+}: {
+  layer: InsertLayer;
+  index: number;
+  assembledY: number;
+  explodedY: number;
+  resolvedHeight: number;
+  exploded: boolean;
+  isActive: boolean;
+  isStackOverflow: boolean;
+  boxW: number;
+  boxH: number;
+}) {
+  const targetY = mmToUnits(exploded ? explodedY : assembledY);
+  const { y } = useSpring({
+    y: targetY,
+    config: SPRING_CONFIG,
+    delay: index * 80,
+  });
+
+  const labelY = mmToUnits(resolvedHeight + 12);
+
+  return (
+    <animated.group position-y={y}>
+        {isActive && (
+          <pointLight
+            position={[0, mmToUnits(resolvedHeight + 30), 0]}
+            intensity={0.6}
+            color="#4488ff"
+            distance={mmToUnits(200)}
+          />
+        )}
+        {layer.placedModules.map((p) => (
+          <InsertTray3D
+            key={p.instanceId}
+            p={p}
+            boxW={boxW}
+            boxH={boxH}
+            stackOverflow={isStackOverflow}
+            inactiveLayer={!isActive}
+          />
+        ))}
+        {exploded && (
+          <Html position={[0, labelY, 0]} center distanceFactor={12} zIndexRange={[100, 0]}>
+            <div className="pointer-events-none whitespace-nowrap rounded-md border border-panel-border bg-card/90 px-2 py-1 font-mono text-[10px] text-foreground shadow-lg backdrop-blur">
+              {layer.name} — {formatMm(resolvedHeight)}mm
+            </div>
+          </Html>
+        )}
+    </animated.group>
+  );
+}
+
+function SceneContent({ exploded }: { exploded: boolean }) {
+  const layers = useConfigurator((s) => s.layers);
+  const activeLayerId = useConfigurator((s) => s.activeLayerId);
+  const overflowingLayerIds = useConfigurator((s) => s.overflowingLayerIds);
+  const stackOverflow = useConfigurator((s) => s.stackOverflow);
   const boxW = useConfigurator((s) => s.boxWidth);
   const boxH = useConfigurator((s) => s.boxHeight);
   const boxD = useConfigurator((s) => s.boxDepth);
+  const maxSide = Math.max(boxW, boxH);
+
+  const assembledOffsets = useMemo(() => computeLayerAssembledOffsets(layers), [layers]);
+  const explodedOffsets = useMemo(
+    () => computeLayerExplodedOffsets(assembledOffsets),
+    [assembledOffsets],
+  );
+  const resolvedHeights = useMemo(() => layers.map(resolveLayerHeight), [layers]);
+
+  return (
+    <>
+      <color attach="background" args={["#0b0f1a"]} />
+      <fog attach="fog" args={["#0b0f1a", mmToUnits(maxSide) * 1.5, mmToUnits(maxSide) * 4]} />
+
+      <ambientLight intensity={0.55} />
+      <directionalLight
+        position={[mmToUnits(300), mmToUnits(500), mmToUnits(300)]}
+        intensity={1.4}
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+        shadow-camera-left={-mmToUnits(maxSide)}
+        shadow-camera-right={mmToUnits(maxSide)}
+        shadow-camera-top={mmToUnits(maxSide)}
+        shadow-camera-bottom={-mmToUnits(maxSide)}
+      />
+      <directionalLight
+        position={[-mmToUnits(200), mmToUnits(300), -mmToUnits(100)]}
+        intensity={0.4}
+      />
+
+      <Suspense fallback={null}>
+        <Environment preset="city" />
+        <BoxContainer boxW={boxW} boxH={boxH} boxD={boxD} />
+        {stackOverflow && <CeilingLimit boxW={boxW} boxH={boxH} boxD={boxD} />}
+        {layers.map((layer, i) => (
+          <LayerGroup3D
+            key={layer.id}
+            layer={layer}
+            index={i}
+            assembledY={assembledOffsets[i] ?? 0}
+            explodedY={explodedOffsets[i] ?? 0}
+            resolvedHeight={resolvedHeights[i] ?? 0}
+            exploded={exploded}
+            isActive={layer.id === activeLayerId}
+            isStackOverflow={overflowingLayerIds.includes(layer.id)}
+            boxW={boxW}
+            boxH={boxH}
+          />
+        ))}
+        {exploded &&
+          layers.map((layer, i) => {
+            if (i >= layers.length - 1) return null;
+            return (
+              <LayerGapMarker
+                key={`gap-marker-${layer.id}`}
+                index={i}
+                assembledY={assembledOffsets[i] ?? 0}
+                explodedY={explodedOffsets[i] ?? 0}
+                resolvedHeight={resolvedHeights[i] ?? 0}
+                layerName={layer.name}
+                exploded={exploded}
+                boxW={boxW}
+                boxH={boxH}
+              />
+            );
+          })}
+      </Suspense>
+
+      <OrbitControls
+        enablePan
+        enableZoom
+        enableRotate
+        minDistance={mmToUnits(maxSide) * 0.6}
+        maxDistance={mmToUnits(maxSide) * 4}
+        minPolarAngle={Math.PI / 6}
+        maxPolarAngle={Math.PI / 2}
+      />
+    </>
+  );
+}
+
+export function Scene3D({ exploded }: { exploded: boolean }) {
+  const boxW = useConfigurator((s) => s.boxWidth);
+  const boxH = useConfigurator((s) => s.boxHeight);
   const maxSide = Math.max(boxW, boxH);
   const camDist = mmToUnits(maxSide) * 1.6;
 
@@ -386,42 +655,7 @@ export function Scene3D() {
         dpr={[1, 2]}
         gl={{ antialias: true, preserveDrawingBuffer: false }}
       >
-        <color attach="background" args={["#0b0f1a"]} />
-        <fog attach="fog" args={["#0b0f1a", mmToUnits(maxSide) * 1.5, mmToUnits(maxSide) * 4]} />
-
-        <ambientLight intensity={0.55} />
-        <directionalLight
-          position={[mmToUnits(300), mmToUnits(500), mmToUnits(300)]}
-          intensity={1.4}
-          castShadow
-          shadow-mapSize-width={1024}
-          shadow-mapSize-height={1024}
-          shadow-camera-left={-mmToUnits(maxSide)}
-          shadow-camera-right={mmToUnits(maxSide)}
-          shadow-camera-top={mmToUnits(maxSide)}
-          shadow-camera-bottom={-mmToUnits(maxSide)}
-        />
-        <directionalLight
-          position={[-mmToUnits(200), mmToUnits(300), -mmToUnits(100)]}
-          intensity={0.4}
-        />
-
-        <Suspense fallback={null}>
-          <Environment preset="city" />
-          <BoxContainer boxW={boxW} boxH={boxH} boxD={boxD} />
-          {placed.map((p) => (
-            <InsertTray3D key={p.instanceId} p={p} boxW={boxW} boxH={boxH} />
-          ))}
-        </Suspense>
-
-        <OrbitControls
-          enablePan
-          enableZoom
-          enableRotate
-          minDistance={mmToUnits(maxSide) * 0.6}
-          maxDistance={mmToUnits(maxSide) * 4}
-          maxPolarAngle={Math.PI / 2.05}
-        />
+        <SceneContent exploded={exploded} />
       </R3FCanvas>
 
       <div className="pointer-events-none absolute bottom-3 left-3 rounded-md border border-panel-border bg-card/70 px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground backdrop-blur">

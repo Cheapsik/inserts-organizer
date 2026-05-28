@@ -12,6 +12,7 @@ import {
 import { ModuleLibrary } from "@/components/configurator/ModuleLibrary";
 import { Canvas, CANVAS_DROPPABLE_ID } from "@/components/configurator/Canvas";
 import { SummaryPanel } from "@/components/configurator/SummaryPanel";
+import { ConfiguratorProvider } from "@/lib/configurator-context";
 import {
   clampToBox,
   rectsCollide,
@@ -30,13 +31,21 @@ import {
   getRotatedSize,
   snap,
 } from "@/lib/insert-types";
-import { Boxes, Box as BoxIcon, Layers3 } from "lucide-react";
+import { Boxes, Box as BoxIcon, Layers3, UnfoldVertical } from "lucide-react";
 
 const Scene3D = lazy(() =>
   import("@/components/configurator/Scene3D").then((m) => ({ default: m.Scene3D })),
 );
 
 export function Configurator() {
+  return (
+    <ConfiguratorProvider>
+      <ConfiguratorInner />
+    </ConfiguratorProvider>
+  );
+}
+
+function ConfiguratorInner() {
   // Avoid SSR hydration mismatches from dnd-kit aria ids, number formatting, etc.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -52,6 +61,7 @@ export function Configurator() {
   const boxHeight = useConfigurator((s) => s.boxHeight);
   const boxDepth = useConfigurator((s) => s.boxDepth);
   const setBoxDimensions = useConfigurator((s) => s.setBoxDimensions);
+  const [explodedView, setExplodedView] = useState(false);
 
   const canvasRectRef = useRef<DOMRect | null>(null);
   const [pxPerMm, setPxPerMm] = useState(1);
@@ -98,7 +108,7 @@ export function Configurator() {
         centerYpx >= canvasRect.top - SLACK &&
         centerYpx <= canvasRect.bottom + SLACK;
 
-      const others = useConfigurator.getState().placed;
+      const others = useConfigurator.getState().placed; // active layer only
       const ghostRect = { x: clamped.x, y: clamped.y, w, h };
       const collides = others.some((p) => {
         const om = getModule(p.moduleId);
@@ -265,7 +275,12 @@ export function Configurator() {
             </div>
           </div>
 
-          <ViewToggle value={viewMode} onChange={setViewMode} />
+          <div className="flex items-center gap-2">
+            <ViewToggle value={viewMode} onChange={setViewMode} />
+            {viewMode === "3d" && (
+              <ExplodedViewToggle active={explodedView} onChange={setExplodedView} />
+            )}
+          </div>
 
           <div className="hidden items-center gap-3 font-mono text-xs text-muted-foreground md:flex">
             <DimInput label="W" value={boxWidth} onChange={(v) => setBoxDimensions({ width: v })} />
@@ -294,7 +309,7 @@ export function Configurator() {
                   </div>
                 }
               >
-                <Scene3D />
+                <Scene3D exploded={explodedView} />
               </Suspense>
             )}
           </main>
@@ -322,6 +337,29 @@ function DragGhostChip() {
     >
       {m.name} · {formatMm(ghost.w)}×{formatMm(ghost.h)}mm
     </div>
+  );
+}
+
+function ExplodedViewToggle({
+  active,
+  onChange,
+}: {
+  active: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!active)}
+      className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
+        active
+          ? "btn-primary-glow border-primary/50 text-primary-foreground"
+          : "border-panel-border bg-card/60 text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      <UnfoldVertical className="h-3.5 w-3.5" />
+      Exploded
+    </button>
   );
 }
 
