@@ -27,6 +27,14 @@ import {
   resolveFingerSlots,
 } from "@/lib/finger-slots";
 import { FingerSlotsPanel } from "./FingerSlotsPanel";
+import { RampConfigPanel } from "./RampConfigPanel";
+import {
+  clampRampConfig,
+  cloneRampConfig,
+  createDefaultRampConfig,
+  resolveRampConfig,
+  type RampConfig,
+} from "@/lib/ramp-config";
 
 interface ModuleFormDialogProps {
   trigger: ReactNode;
@@ -59,6 +67,9 @@ function ModuleFormDialog({
   const [fingerSlots, setFingerSlots] = useState(
     () => cloneFingerSlots(initial?.fingerSlots ?? createDefaultFingerSlots()),
   );
+  const [rampConfig, setRampConfig] = useState<RampConfig>(
+    () => cloneRampConfig(initial?.rampConfig ?? createDefaultRampConfig()),
+  );
   const [error, setError] = useState<string | null>(null);
 
   const w = typeof width === "number" ? width : 0;
@@ -76,6 +87,7 @@ function ModuleFormDialog({
     setDepth(initial?.depth ?? DEFAULT_DEPTH_MM);
     setWallThickness(initial?.wallThickness ?? DEFAULT_WALL_MM);
     setFingerSlots(cloneFingerSlots(initial?.fingerSlots ?? createDefaultFingerSlots()));
+    setRampConfig(cloneRampConfig(initial?.rampConfig ?? createDefaultRampConfig()));
     setError(null);
   };
 
@@ -101,6 +113,7 @@ function ModuleFormDialog({
       depth: rd,
       wallThickness: rt,
       fingerSlots: clampAllFingerSlots(fingerSlots, rw, rh, rd),
+      rampConfig: clampRampConfig(rampConfig, rd, rt),
     });
     setOpen(false);
   };
@@ -161,6 +174,13 @@ function ModuleFormDialog({
             moduleHeight={h}
             moduleDepth={d}
             onChange={setFingerSlots}
+          />
+
+          <RampConfigPanel
+            rampConfig={rampConfig}
+            moduleDepth={d}
+            wallThickness={t}
+            onChange={setRampConfig}
           />
 
           <div className="flex items-center justify-between rounded-lg border border-panel-border bg-card/40 px-3 py-2.5">
@@ -315,6 +335,7 @@ export function EditCustomModuleButton({ moduleId }: { moduleId: string }) {
         depth: m.depth,
         wallThickness: m.wallThickness,
         fingerSlots: cloneFingerSlots(m.fingerSlots ?? createDefaultFingerSlots()),
+        rampConfig: cloneRampConfig(m.rampConfig ?? createDefaultRampConfig()),
       }}
       onSubmit={(values) => updateCustomModule(moduleId, values)}
     />
@@ -354,6 +375,7 @@ export function EditPlacedModuleButton({ instanceId }: { instanceId: string }) {
         depth: m.depth,
         wallThickness: m.wallThickness,
         fingerSlots: cloneFingerSlots(resolveFingerSlots(placed, m)),
+        rampConfig: cloneRampConfig(resolveRampConfig(placed, m, m.depth, m.wallThickness)),
       }}
       onSubmit={(values) => editPlacedModule(instanceId, values)}
     />

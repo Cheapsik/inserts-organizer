@@ -12,6 +12,7 @@ import {
   type FingerSlotWallKey,
   type FingerSlotsConfig,
 } from "@/lib/finger-slots";
+import { resolveRampConfig, rampGradientAngleCss, type RampConfig } from "@/lib/ramp-config";
 import { useConfigurator } from "@/lib/configurator-store";
 import { groupColorFromId } from "@/lib/merge-groups";
 import { EditPlacedModuleButton } from "./CustomModuleDialog";
@@ -84,6 +85,8 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
   const isInvalid = placed.isOverlapping || placed.isOutOfBounds || dragCollides;
   const baseColor = groupAccent ?? m.color;
   const fingerSlots = resolveFingerSlots(placed, m);
+  const wallT = placed.wallThickness ?? m.wallThickness;
+  const rampConfig = resolveRampConfig(placed, m, m.depth, wallT);
   const bg = isInvalid
     ? `linear-gradient(135deg, ${baseColor}55, ${baseColor}25)`
     : `linear-gradient(135deg, ${baseColor}50, ${baseColor}20)`;
@@ -129,6 +132,10 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
       >
         <ModuleDividers placed={placed} pxPerMm={pxPerMm} disabled={dividersDisabled} />
 
+        {rampConfig.enabled && (
+          <RampIndicator rampConfig={rampConfig} rotation={placed.rotation} baseColor={baseColor} />
+        )}
+
         {hasAnyFingerSlot(fingerSlots) && (
           <FingerSlotIndicators
             fingerSlots={fingerSlots}
@@ -145,6 +152,11 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
           {(placed.dividers?.length ?? 0) > 0 && (
             <div className="font-mono text-[9px] text-white/50">
               {placed.dividers?.length ?? 0} div
+            </div>
+          )}
+          {rampConfig.enabled && (
+            <div className="font-mono text-[9px] text-white/60">
+              ramp {rampConfig.wall} · {formatMm(rampConfig.startHeight)} mm
             </div>
           )}
           {isGrouped && (
@@ -224,6 +236,39 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
         </button>
       </div>
     </motion.div>
+  );
+}
+
+function RampIndicator({
+  rampConfig,
+  rotation,
+  baseColor,
+}: {
+  rampConfig: RampConfig;
+  rotation: 0 | 90 | 180 | 270;
+  baseColor: string;
+}) {
+  const gradientDeg = rampGradientAngleCss(rotation, rampConfig.wall);
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 overflow-hidden rounded-[2px]"
+      style={{
+        background: `linear-gradient(${gradientDeg}deg, ${baseColor}55 0%, ${baseColor}10 100%)`,
+      }}
+    >
+      <div
+        className="absolute inset-0 opacity-25"
+        style={{
+          backgroundImage: `repeating-linear-gradient(
+            ${gradientDeg + 45}deg,
+            transparent,
+            transparent 5px,
+            ${baseColor}50 5px,
+            ${baseColor}50 7px
+          )`,
+        }}
+      />
+    </div>
   );
 }
 

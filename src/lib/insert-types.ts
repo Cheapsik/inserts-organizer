@@ -12,6 +12,10 @@ export {
   clampAllFingerSlots,
 } from "@/lib/finger-slots";
 import type { FingerSlotsConfig } from "@/lib/finger-slots";
+import type { RampConfig } from "@/lib/ramp-config";
+
+export type { RampConfig } from "@/lib/ramp-config";
+export { createDefaultRampConfig, clampRampConfig } from "@/lib/ramp-config";
 
 export interface InsertModule {
   id: string;
@@ -29,6 +33,8 @@ export interface InsertModule {
   type: ModuleType;
   /** Per-wall U-shaped cutout configuration (module template). */
   fingerSlots?: FingerSlotsConfig;
+  /** Internal bottom ramp configuration (module template). */
+  rampConfig?: RampConfig;
 }
 
 export type DividerOrientation = "horizontal" | "vertical";
@@ -60,6 +66,8 @@ export interface PlacedModule {
   isOutOfBounds?: boolean;
   /** Per-instance finger-slot overrides (falls back to module template). */
   fingerSlots?: FingerSlotsConfig;
+  /** Per-instance ramp overrides (falls back to module template). */
+  rampConfig?: RampConfig;
 }
 
 /** Default box dimensions (mm). Used as the initial state for the

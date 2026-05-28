@@ -1,7 +1,7 @@
 import { Canvas as R3FCanvas } from "@react-three/fiber";
 import { OrbitControls, Environment } from "@react-three/drei";
 import { Base, Geometry, Subtraction } from "@react-three/csg";
-import { Suspense, useMemo, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, type ReactNode } from "react";
 import * as THREE from "three";
 import { getModule, getRotatedSize, type PlacedModule } from "@/lib/insert-types";
 import {
@@ -13,6 +13,13 @@ import {
 } from "@/lib/finger-slots";
 import { useConfigurator } from "@/lib/configurator-store";
 import { groupColorFromId } from "@/lib/merge-groups";
+import {
+  getRampIndices,
+  getRampVertices,
+  rampSurfaceHeightMm,
+  resolveRampConfig,
+  type RampConfig,
+} from "@/lib/ramp-config";
 
 const WALL_3D_TO_LOCAL: Record<TrayWall3D, FingerSlotWallKey> = {
   left: "left",
@@ -120,6 +127,59 @@ function mmToUnits(mm: number) {
   return mm * SCALE;
 }
 
+function createRampWedgeGeometry(
+  wall: RampConfig["wall"],
+  halfW: number,
+  halfL: number,
+  height: number,
+): THREE.BufferGeometry {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(getRampVertices(wall, halfW, halfL, height), 3));
+  geo.setIndex(getRampIndices(wall));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function TrayFloor({
+  innerWidthU,
+  innerLengthU,
+  thicknessU,
+  rampConfig,
+  material,
+}: {
+  innerWidthU: number;
+  innerLengthU: number;
+  thicknessU: number;
+  rampConfig: RampConfig;
+  material: ReactNode;
+}) {
+  const halfW = innerWidthU / 2;
+  const halfL = innerLengthU / 2;
+  const heightU = mmToUnits(rampConfig.startHeight);
+
+  const rampGeo = useMemo(() => {
+    if (!rampConfig.enabled) return null;
+    return createRampWedgeGeometry(rampConfig.wall, halfW, halfL, heightU);
+  }, [rampConfig.enabled, rampConfig.wall, rampConfig.startHeight, halfW, halfL, heightU]);
+
+  useEffect(() => () => rampGeo?.dispose(), [rampGeo]);
+
+  if (!rampConfig.enabled) {
+    return (
+      <mesh position={[0, thicknessU / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[innerWidthU + 2 * thicknessU, thicknessU, innerLengthU + 2 * thicknessU]} />
+        {material}
+      </mesh>
+    );
+  }
+
+  return (
+    <mesh geometry={rampGeo!} castShadow receiveShadow>
+      {material}
+    </mesh>
+  );
+}
+
 /**
  * Hollow open-top tray built from 5 box meshes (floor + 4 walls).
  * The group origin sits on the inside of the box floor (y=0), so
@@ -167,16 +227,28 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
   const rotY = -(p.rotation * Math.PI) / 180;
   const dividers = p.dividers ?? [];
   const fingerSlots = resolveFingerSlots(p, m);
+  const innerWidthMm = localW - 2 * tMm;
+  const innerLengthMm = localH - 2 * tMm;
+  const innerLengthU = L - 2 * T;
+  const innerWidthU = W - 2 * T;
+  const rampConfig = resolveRampConfig(p, m, dMm, tMm);
 
   const slotFor3DWall = (wall3d: TrayWall3D) => fingerSlots[WALL_3D_TO_LOCAL[wall3d]];
 
+  const rampBaseY = (xFromCenterMm: number, zFromCenterMm: number) =>
+    mmToUnits(rampSurfaceHeightMm(xFromCenterMm, zFromCenterMm, rampConfig, innerWidthMm, innerLengthMm));
+
+  const floorTopY = T;
+
   return (
     <group position={[x3, y3, z3]} rotation={[0, rotY, 0]}>
-      {/* Bottom floor */}
-      <mesh position={[0, T / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, T, L]} />
-        {material}
-      </mesh>
+      <TrayFloor
+        innerWidthU={innerWidthU}
+        innerLengthU={innerLengthU}
+        thicknessU={T}
+        rampConfig={rampConfig}
+        material={material}
+      />
       {/* Left wall */}
       <TrayWall
         position={[-W / 2 + T / 2, D / 2, 0]}
@@ -218,26 +290,30 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
         const divH = mmToUnits(Math.min(div.height, dMm - tMm));
         const divT = T;
         if (div.orientation === "horizontal") {
+          const zFromCenterMm = -innerLengthMm / 2 + (div.position - tMm);
+          const baseY = rampConfig.enabled ? rampBaseY(0, zFromCenterMm) : floorTopY;
           return (
             <mesh
               key={div.id}
-              position={[0, divH / 2 + T, mmToUnits(div.position) - L / 2]}
+              position={[0, divH / 2 + baseY, mmToUnits(div.position) - L / 2]}
               castShadow
               receiveShadow
             >
-              <boxGeometry args={[W - 2 * divT, divH, divT]} />
+              <boxGeometry args={[innerWidthU, divH, divT]} />
               {dividerMaterial}
             </mesh>
           );
         }
+        const xFromCenterMm = div.position - tMm - innerWidthMm / 2;
+        const baseY = rampConfig.enabled ? rampBaseY(xFromCenterMm, 0) : floorTopY;
         return (
           <mesh
             key={div.id}
-            position={[mmToUnits(div.position) - W / 2, divH / 2 + T, 0]}
+            position={[mmToUnits(div.position) - W / 2, divH / 2 + baseY, 0]}
             castShadow
             receiveShadow
           >
-            <boxGeometry args={[divT, divH, L - 2 * divT]} />
+            <boxGeometry args={[divT, divH, innerLengthU]} />
             {dividerMaterial}
           </mesh>
         );

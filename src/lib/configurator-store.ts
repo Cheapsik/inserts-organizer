@@ -33,6 +33,12 @@ import {
   createDefaultFingerSlots,
   type FingerSlotsConfig,
 } from "@/lib/finger-slots";
+import {
+  clampRampConfig,
+  cloneRampConfig,
+  createDefaultRampConfig,
+  type RampConfig,
+} from "@/lib/ramp-config";
 
 export type ViewMode = "2d" | "3d";
 
@@ -72,6 +78,7 @@ export interface ModuleEditValues {
   depth: number;
   wallThickness: number;
   fingerSlots: FingerSlotsConfig;
+  rampConfig: RampConfig;
 }
 
 interface AddCustomInput extends ModuleEditValues {
@@ -95,7 +102,7 @@ interface ConfiguratorState {
   setViewMode: (m: ViewMode) => void;
   setBoxDimensions: (dims: Partial<{ width: number; height: number; depth: number }>) => void;
   addCustomModule: (input: AddCustomInput) => InsertModule;
-  updateCustomModule: (id: string, values: ModuleEditValues, options?: { propagateFingerSlots?: boolean }) => void;
+  updateCustomModule: (id: string, values: ModuleEditValues, options?: { propagateInstanceOverrides?: boolean }) => void;
   editPlacedModule: (instanceId: string, values: ModuleEditValues) => void;
   addModule: (moduleId: string, xMm: number, yMm: number) => void;
   moveModule: (
@@ -234,6 +241,7 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
   addCustomModule: (input) => {
     const id = `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
     const wallThickness = input.wallThickness ?? DEFAULT_WALL_MM;
+    const innerWidth = input.width - 2 * wallThickness;
     const m: InsertModule = {
       id,
       name: input.name,
@@ -250,6 +258,11 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
         input.height,
         input.depth,
       ),
+      rampConfig: clampRampConfig(
+        input.rampConfig ?? createDefaultRampConfig(),
+        input.depth,
+        wallThickness,
+      ),
     };
     registerModule(m);
     set({ customModules: [...get().customModules, m] });
@@ -259,6 +272,7 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
   updateCustomModule: (id, values, options) => {
     const s = get();
     const existing = getModule(id);
+    const innerWidth = values.width - 2 * values.wallThickness;
     const updated: InsertModule = {
       ...existing,
       name: values.name,
@@ -272,10 +286,11 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
         values.height,
         values.depth,
       ),
+      rampConfig: clampRampConfig(values.rampConfig, values.depth, values.wallThickness),
       price: priceFromVolume(values.width, values.height, values.depth, values.wallThickness),
     };
     registerModule(updated);
-    const propagateFingerSlots = options?.propagateFingerSlots !== false;
+    const propagateInstanceOverrides = options?.propagateInstanceOverrides !== false;
     set({
       customModules: s.customModules.map((m) => (m.id === id ? updated : m)),
       placed: recompute(
@@ -287,8 +302,11 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
             ...p,
             x,
             y,
-            ...(propagateFingerSlots
-              ? { fingerSlots: cloneFingerSlots(updated.fingerSlots!) }
+            ...(propagateInstanceOverrides
+              ? {
+                  fingerSlots: cloneFingerSlots(updated.fingerSlots!),
+                  rampConfig: cloneRampConfig(updated.rampConfig!),
+                }
               : {}),
           };
         }),
@@ -305,12 +323,18 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
     const existing = getModule(placed.moduleId);
 
     if (existing.type === "custom") {
-      get().updateCustomModule(existing.id, values, { propagateFingerSlots: false });
+      get().updateCustomModule(existing.id, values, { propagateInstanceOverrides: false });
       set({
         placed: recompute(
           get().placed.map((p) =>
             p.instanceId === instanceId
-              ? { ...p, fingerSlots: cloneFingerSlots(values.fingerSlots) }
+              ? {
+                  ...p,
+                  fingerSlots: cloneFingerSlots(values.fingerSlots),
+                  rampConfig: cloneRampConfig(
+                    clampRampConfig(values.rampConfig, values.depth, values.wallThickness),
+                  ),
+                }
               : p,
           ),
           s.boxWidth,
@@ -333,6 +357,9 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
                 x,
                 y,
                 fingerSlots: cloneFingerSlots(values.fingerSlots),
+                rampConfig: cloneRampConfig(
+                  clampRampConfig(values.rampConfig, values.depth, values.wallThickness),
+                ),
               }
             : p,
         ),
@@ -356,6 +383,7 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
       isOverlapping: false,
       isOutOfBounds: false,
       fingerSlots: cloneFingerSlots(m.fingerSlots ?? createDefaultFingerSlots()),
+      rampConfig: cloneRampConfig(m.rampConfig ?? createDefaultRampConfig()),
     };
     set({ placed: recompute([...s.placed, next], s.boxWidth, s.boxHeight) });
   },
