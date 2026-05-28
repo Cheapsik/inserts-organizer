@@ -27,6 +27,12 @@ import {
   getModuleWallThickness,
 } from "@/lib/module-dividers";
 import { getGroupBounds, getGroupMemberIds, mergeModules } from "@/lib/merge-groups";
+import {
+  clampAllFingerSlots,
+  cloneFingerSlots,
+  createDefaultFingerSlots,
+  type FingerSlotsConfig,
+} from "@/lib/finger-slots";
 
 export type ViewMode = "2d" | "3d";
 
@@ -65,6 +71,7 @@ export interface ModuleEditValues {
   height: number;
   depth: number;
   wallThickness: number;
+  fingerSlots: FingerSlotsConfig;
 }
 
 interface AddCustomInput extends ModuleEditValues {
@@ -88,7 +95,7 @@ interface ConfiguratorState {
   setViewMode: (m: ViewMode) => void;
   setBoxDimensions: (dims: Partial<{ width: number; height: number; depth: number }>) => void;
   addCustomModule: (input: AddCustomInput) => InsertModule;
-  updateCustomModule: (id: string, values: ModuleEditValues) => void;
+  updateCustomModule: (id: string, values: ModuleEditValues, options?: { propagateFingerSlots?: boolean }) => void;
   editPlacedModule: (instanceId: string, values: ModuleEditValues) => void;
   addModule: (moduleId: string, xMm: number, yMm: number) => void;
   moveModule: (
@@ -237,13 +244,19 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
       price: priceFromVolume(input.width, input.height, input.depth, wallThickness),
       color: input.color ?? COLOR_FALLBACK,
       type: "custom",
+      fingerSlots: clampAllFingerSlots(
+        input.fingerSlots ?? createDefaultFingerSlots(),
+        input.width,
+        input.height,
+        input.depth,
+      ),
     };
     registerModule(m);
     set({ customModules: [...get().customModules, m] });
     return m;
   },
 
-  updateCustomModule: (id, values) => {
+  updateCustomModule: (id, values, options) => {
     const s = get();
     const existing = getModule(id);
     const updated: InsertModule = {
@@ -253,9 +266,16 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
       height: values.height,
       depth: values.depth,
       wallThickness: values.wallThickness,
+      fingerSlots: clampAllFingerSlots(
+        values.fingerSlots,
+        values.width,
+        values.height,
+        values.depth,
+      ),
       price: priceFromVolume(values.width, values.height, values.depth, values.wallThickness),
     };
     registerModule(updated);
+    const propagateFingerSlots = options?.propagateFingerSlots !== false;
     set({
       customModules: s.customModules.map((m) => (m.id === id ? updated : m)),
       placed: recompute(
@@ -263,7 +283,14 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
           if (p.moduleId !== id) return p;
           const { w, h } = getRotatedSize(updated, p.rotation);
           const { x, y } = clampToBox(p.x, p.y, w, h, s.boxWidth, s.boxHeight);
-          return { ...p, x, y };
+          return {
+            ...p,
+            x,
+            y,
+            ...(propagateFingerSlots
+              ? { fingerSlots: cloneFingerSlots(updated.fingerSlots!) }
+              : {}),
+          };
         }),
         s.boxWidth,
         s.boxHeight,
@@ -278,7 +305,18 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
     const existing = getModule(placed.moduleId);
 
     if (existing.type === "custom") {
-      get().updateCustomModule(existing.id, values);
+      get().updateCustomModule(existing.id, values, { propagateFingerSlots: false });
+      set({
+        placed: recompute(
+          get().placed.map((p) =>
+            p.instanceId === instanceId
+              ? { ...p, fingerSlots: cloneFingerSlots(values.fingerSlots) }
+              : p,
+          ),
+          s.boxWidth,
+          s.boxHeight,
+        ),
+      });
       return;
     }
 
@@ -288,7 +326,15 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
     set({
       placed: recompute(
         get().placed.map((p) =>
-          p.instanceId === instanceId ? { ...p, moduleId: variant.id, x, y } : p,
+          p.instanceId === instanceId
+            ? {
+                ...p,
+                moduleId: variant.id,
+                x,
+                y,
+                fingerSlots: cloneFingerSlots(values.fingerSlots),
+              }
+            : p,
         ),
         s.boxWidth,
         s.boxHeight,
@@ -309,6 +355,7 @@ export const useConfigurator = create<ConfiguratorState>((set, get) => ({
       rotation: 0,
       isOverlapping: false,
       isOutOfBounds: false,
+      fingerSlots: cloneFingerSlots(m.fingerSlots ?? createDefaultFingerSlots()),
     };
     set({ placed: recompute([...s.placed, next], s.boxWidth, s.boxHeight) });
   },

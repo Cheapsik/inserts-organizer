@@ -1,10 +1,114 @@
 import { Canvas as R3FCanvas } from "@react-three/fiber";
 import { OrbitControls, Environment } from "@react-three/drei";
-import { Suspense, useMemo } from "react";
+import { Base, Geometry, Subtraction } from "@react-three/csg";
+import { Suspense, useMemo, type ReactNode } from "react";
 import * as THREE from "three";
 import { getModule, getRotatedSize, type PlacedModule } from "@/lib/insert-types";
+import {
+  resolveFingerSlots,
+  slotAlongWallOffsetMm,
+  type FingerSlotConfig,
+  type FingerSlotWallKey,
+  type TrayWall3D,
+} from "@/lib/finger-slots";
 import { useConfigurator } from "@/lib/configurator-store";
 import { groupColorFromId } from "@/lib/merge-groups";
+
+const WALL_3D_TO_LOCAL: Record<TrayWall3D, FingerSlotWallKey> = {
+  left: "left",
+  right: "right",
+  front: "bottom",
+  back: "top",
+};
+
+function FingerSlotCutouts({
+  slot,
+  wallT,
+  wallH,
+  wallLenMm,
+  lengthAxis,
+}: {
+  slot: FingerSlotConfig;
+  wallT: number;
+  wallH: number;
+  wallLenMm: number;
+  lengthAxis: "x" | "z";
+}) {
+  const r = mmToUnits(slot.width / 2);
+  const depthU = mmToUnits(slot.depth);
+  const widthU = mmToUnits(slot.width);
+  const alongOffset = mmToUnits(slotAlongWallOffsetMm(slot, wallLenMm));
+  const pierce = wallT * 3;
+
+  const cylY = wallH / 2 - depthU + r;
+  const boxH = Math.max(0, depthU - r);
+  const boxY = wallH / 2 - boxH / 2;
+
+  const along: [number, number, number] =
+    lengthAxis === "z" ? [0, 0, alongOffset] : [alongOffset, 0, 0];
+  const cylRotation: [number, number, number] =
+    lengthAxis === "z" ? [0, 0, Math.PI / 2] : [Math.PI / 2, 0, 0];
+  const boxArgs: [number, number, number] =
+    lengthAxis === "z" ? [pierce, boxH, widthU] : [widthU, boxH, pierce];
+
+  return (
+    <>
+      {boxH > 0.001 && (
+        <Subtraction position={[along[0], boxY, along[2]]}>
+          <boxGeometry args={boxArgs} />
+        </Subtraction>
+      )}
+      <Subtraction position={[along[0], cylY, along[2]]} rotation={cylRotation}>
+        <cylinderGeometry args={[r, r, pierce, 32]} />
+      </Subtraction>
+    </>
+  );
+}
+
+function TrayWall({
+  position,
+  size,
+  material,
+  slot,
+  wallLenMm,
+  lengthAxis,
+}: {
+  position: [number, number, number];
+  size: [number, number, number];
+  material: ReactNode;
+  slot?: FingerSlotConfig | null;
+  wallLenMm: number;
+  lengthAxis: "x" | "z";
+}) {
+  const [wallT, wallH, wallLen] = size;
+
+  if (!slot?.enabled) {
+    return (
+      <mesh position={position} castShadow receiveShadow>
+        <boxGeometry args={size} />
+        {material}
+      </mesh>
+    );
+  }
+
+  return (
+    <mesh position={position} castShadow receiveShadow>
+      <Geometry computeVertexNormals>
+        <Base>
+          <boxGeometry args={[wallT, wallH, wallLen]} />
+        </Base>
+        <FingerSlotCutouts
+          slot={slot}
+          wallT={wallT}
+          wallH={wallH}
+          wallLenMm={wallLenMm}
+          lengthAxis={lengthAxis}
+        />
+      </Geometry>
+      {material}
+    </mesh>
+  );
+}
 
 // Convert mm coordinate space (origin top-left, y-down) to a centered 3D scene
 // in arbitrary units. We scale 1 mm = 1 unit / 100 for camera comfort.
@@ -62,6 +166,9 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
 
   const rotY = -(p.rotation * Math.PI) / 180;
   const dividers = p.dividers ?? [];
+  const fingerSlots = resolveFingerSlots(p, m);
+
+  const slotFor3DWall = (wall3d: TrayWall3D) => fingerSlots[WALL_3D_TO_LOCAL[wall3d]];
 
   return (
     <group position={[x3, y3, z3]} rotation={[0, rotY, 0]}>
@@ -71,25 +178,41 @@ function InsertTray3D({ p, boxW, boxH }: { p: PlacedModule; boxW: number; boxH: 
         {material}
       </mesh>
       {/* Left wall */}
-      <mesh position={[-W / 2 + T / 2, D / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[T, D, L]} />
-        {material}
-      </mesh>
+      <TrayWall
+        position={[-W / 2 + T / 2, D / 2, 0]}
+        size={[T, D, L]}
+        material={material}
+        slot={slotFor3DWall("left")}
+        wallLenMm={localH}
+        lengthAxis="z"
+      />
       {/* Right wall */}
-      <mesh position={[W / 2 - T / 2, D / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[T, D, L]} />
-        {material}
-      </mesh>
+      <TrayWall
+        position={[W / 2 - T / 2, D / 2, 0]}
+        size={[T, D, L]}
+        material={material}
+        slot={slotFor3DWall("right")}
+        wallLenMm={localH}
+        lengthAxis="z"
+      />
       {/* Front wall */}
-      <mesh position={[0, D / 2, L / 2 - T / 2]} castShadow receiveShadow>
-        <boxGeometry args={[W - 2 * T, D, T]} />
-        {material}
-      </mesh>
+      <TrayWall
+        position={[0, D / 2, L / 2 - T / 2]}
+        size={[W - 2 * T, D, T]}
+        material={material}
+        slot={slotFor3DWall("front")}
+        wallLenMm={localW - 2 * tMm}
+        lengthAxis="x"
+      />
       {/* Back wall */}
-      <mesh position={[0, D / 2, -L / 2 + T / 2]} castShadow receiveShadow>
-        <boxGeometry args={[W - 2 * T, D, T]} />
-        {material}
-      </mesh>
+      <TrayWall
+        position={[0, D / 2, -L / 2 + T / 2]}
+        size={[W - 2 * T, D, T]}
+        material={material}
+        slot={slotFor3DWall("back")}
+        wallLenMm={localW - 2 * tMm}
+        lengthAxis="x"
+      />
 
       {dividers.map((div) => {
         const divH = mmToUnits(Math.min(div.height, dMm - tMm));

@@ -5,6 +5,14 @@ export interface BoxDimensions {
 
 export type ModuleType = "cards" | "tokens" | "minis" | "custom";
 
+export type { FingerSlotConfig, FingerSlotsConfig } from "@/lib/finger-slots";
+export {
+  CANVAS_BG,
+  createDefaultFingerSlots,
+  clampAllFingerSlots,
+} from "@/lib/finger-slots";
+import type { FingerSlotsConfig } from "@/lib/finger-slots";
+
 export interface InsertModule {
   id: string;
   name: string;
@@ -19,6 +27,8 @@ export interface InsertModule {
   price: number;
   color: string;
   type: ModuleType;
+  /** Per-wall U-shaped cutout configuration (module template). */
+  fingerSlots?: FingerSlotsConfig;
 }
 
 export type DividerOrientation = "horizontal" | "vertical";
@@ -48,6 +58,8 @@ export interface PlacedModule {
   /** True when the module's footprint extends past the current workspace
    *  boundaries (e.g. the user shrunk the box). */
   isOutOfBounds?: boolean;
+  /** Per-instance finger-slot overrides (falls back to module template). */
+  fingerSlots?: FingerSlotsConfig;
 }
 
 /** Default box dimensions (mm). Used as the initial state for the

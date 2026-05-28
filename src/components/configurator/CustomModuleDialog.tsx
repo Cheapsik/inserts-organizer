@@ -20,6 +20,13 @@ import {
   priceFromVolume,
   roundDim,
 } from "@/lib/insert-types";
+import {
+  clampAllFingerSlots,
+  cloneFingerSlots,
+  createDefaultFingerSlots,
+  resolveFingerSlots,
+} from "@/lib/finger-slots";
+import { FingerSlotsPanel } from "./FingerSlotsPanel";
 
 interface ModuleFormDialogProps {
   trigger: ReactNode;
@@ -49,6 +56,9 @@ function ModuleFormDialog({
   const [wallThickness, setWallThickness] = useState<number | "">(
     initial?.wallThickness ?? DEFAULT_WALL_MM,
   );
+  const [fingerSlots, setFingerSlots] = useState(
+    () => cloneFingerSlots(initial?.fingerSlots ?? createDefaultFingerSlots()),
+  );
   const [error, setError] = useState<string | null>(null);
 
   const w = typeof width === "number" ? width : 0;
@@ -65,6 +75,7 @@ function ModuleFormDialog({
     setHeight(initial?.height ?? 60);
     setDepth(initial?.depth ?? DEFAULT_DEPTH_MM);
     setWallThickness(initial?.wallThickness ?? DEFAULT_WALL_MM);
+    setFingerSlots(cloneFingerSlots(initial?.fingerSlots ?? createDefaultFingerSlots()));
     setError(null);
   };
 
@@ -89,6 +100,7 @@ function ModuleFormDialog({
       height: rh,
       depth: rd,
       wallThickness: rt,
+      fingerSlots: clampAllFingerSlots(fingerSlots, rw, rh, rd),
     });
     setOpen(false);
   };
@@ -102,7 +114,7 @@ function ModuleFormDialog({
       }}
     >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="glass-panel border-panel-border sm:max-w-md">
+      <DialogContent className="glass-panel max-h-[90vh] overflow-y-auto border-panel-border sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" />
@@ -142,6 +154,14 @@ function ModuleFormDialog({
               />
             </Field>
           </div>
+
+          <FingerSlotsPanel
+            fingerSlots={fingerSlots}
+            moduleWidth={w}
+            moduleHeight={h}
+            moduleDepth={d}
+            onChange={setFingerSlots}
+          />
 
           <div className="flex items-center justify-between rounded-lg border border-panel-border bg-card/40 px-3 py-2.5">
             <div>
@@ -294,6 +314,7 @@ export function EditCustomModuleButton({ moduleId }: { moduleId: string }) {
         height: m.height,
         depth: m.depth,
         wallThickness: m.wallThickness,
+        fingerSlots: cloneFingerSlots(m.fingerSlots ?? createDefaultFingerSlots()),
       }}
       onSubmit={(values) => updateCustomModule(moduleId, values)}
     />
@@ -332,6 +353,7 @@ export function EditPlacedModuleButton({ instanceId }: { instanceId: string }) {
         height: m.height,
         depth: m.depth,
         wallThickness: m.wallThickness,
+        fingerSlots: cloneFingerSlots(resolveFingerSlots(placed, m)),
       }}
       onSubmit={(values) => editPlacedModule(instanceId, values)}
     />

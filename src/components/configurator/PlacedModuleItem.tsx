@@ -3,6 +3,15 @@ import { motion } from "framer-motion";
 import { Link2Off, Minus, RotateCw, SeparatorVertical, X } from "lucide-react";
 import { getDragRenderPosition } from "@/lib/canvas-drag";
 import { formatMm, getModule, getRotatedSize, type PlacedModule } from "@/lib/insert-types";
+import {
+  CANVAS_BG,
+  hasAnyFingerSlot,
+  localWallToCanvasEdge,
+  resolveFingerSlots,
+  type FingerSlotConfig,
+  type FingerSlotWallKey,
+  type FingerSlotsConfig,
+} from "@/lib/finger-slots";
 import { useConfigurator } from "@/lib/configurator-store";
 import { groupColorFromId } from "@/lib/merge-groups";
 import { EditPlacedModuleButton } from "./CustomModuleDialog";
@@ -74,6 +83,7 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
 
   const isInvalid = placed.isOverlapping || placed.isOutOfBounds || dragCollides;
   const baseColor = groupAccent ?? m.color;
+  const fingerSlots = resolveFingerSlots(placed, m);
   const bg = isInvalid
     ? `linear-gradient(135deg, ${baseColor}55, ${baseColor}25)`
     : `linear-gradient(135deg, ${baseColor}50, ${baseColor}20)`;
@@ -118,6 +128,14 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
         }}
       >
         <ModuleDividers placed={placed} pxPerMm={pxPerMm} disabled={dividersDisabled} />
+
+        {hasAnyFingerSlot(fingerSlots) && (
+          <FingerSlotIndicators
+            fingerSlots={fingerSlots}
+            rotation={placed.rotation}
+            pxPerMm={pxPerMm}
+          />
+        )}
 
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center">
           <div className="truncate text-[11px] font-semibold text-white drop-shadow">{m.name}</div>
@@ -207,4 +225,157 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
       </div>
     </motion.div>
   );
+}
+
+function FingerSlotIndicators({
+  fingerSlots,
+  rotation,
+  pxPerMm,
+}: {
+  fingerSlots: FingerSlotsConfig;
+  rotation: 0 | 90 | 180 | 270;
+  pxPerMm: number;
+}) {
+  const walls: FingerSlotWallKey[] = ["top", "bottom", "left", "right"];
+
+  return (
+    <>
+      {walls.map((wall) => {
+        const slot = fingerSlots[wall];
+        if (!slot.enabled) return null;
+        const canvasEdge = localWallToCanvasEdge(rotation, wall);
+        return (
+          <FingerSlotCutout key={wall} edge={canvasEdge} slot={slot} pxPerMm={pxPerMm} />
+        );
+      })}
+    </>
+  );
+}
+
+function FingerSlotCutout({
+  edge,
+  slot,
+  pxPerMm,
+}: {
+  edge: FingerSlotWallKey;
+  slot: FingerSlotConfig;
+  pxPerMm: number;
+}) {
+  const widthPx = slot.width * pxPerMm;
+  const radiusPx = widthPx / 2;
+  const straightDepthPx = Math.max(0, (slot.depth - slot.width / 2) * pxPerMm);
+  const positionPct = slot.position;
+
+  const shared: React.CSSProperties = {
+    position: "absolute",
+    background: CANVAS_BG,
+    pointerEvents: "none",
+  };
+
+  switch (edge) {
+    case "top":
+      return (
+        <>
+          <div
+            style={{
+              ...shared,
+              left: `${positionPct}%`,
+              top: 0,
+              width: widthPx,
+              height: straightDepthPx,
+              transform: "translateX(-50%)",
+            }}
+          />
+          <div
+            style={{
+              ...shared,
+              left: `${positionPct}%`,
+              top: -radiusPx,
+              width: widthPx,
+              height: widthPx,
+              borderRadius: "50%",
+              transform: "translateX(-50%)",
+            }}
+          />
+        </>
+      );
+    case "bottom":
+      return (
+        <>
+          <div
+            style={{
+              ...shared,
+              left: `${positionPct}%`,
+              bottom: 0,
+              width: widthPx,
+              height: straightDepthPx,
+              transform: "translateX(-50%)",
+            }}
+          />
+          <div
+            style={{
+              ...shared,
+              left: `${positionPct}%`,
+              bottom: -radiusPx,
+              width: widthPx,
+              height: widthPx,
+              borderRadius: "50%",
+              transform: "translateX(-50%)",
+            }}
+          />
+        </>
+      );
+    case "left":
+      return (
+        <>
+          <div
+            style={{
+              ...shared,
+              left: 0,
+              top: `${positionPct}%`,
+              width: straightDepthPx,
+              height: widthPx,
+              transform: "translateY(-50%)",
+            }}
+          />
+          <div
+            style={{
+              ...shared,
+              left: -radiusPx,
+              top: `${positionPct}%`,
+              width: widthPx,
+              height: widthPx,
+              borderRadius: "50%",
+              transform: "translateY(-50%)",
+            }}
+          />
+        </>
+      );
+    case "right":
+      return (
+        <>
+          <div
+            style={{
+              ...shared,
+              right: 0,
+              top: `${positionPct}%`,
+              width: straightDepthPx,
+              height: widthPx,
+              transform: "translateY(-50%)",
+            }}
+          />
+          <div
+            style={{
+              ...shared,
+              right: -radiusPx,
+              top: `${positionPct}%`,
+              width: widthPx,
+              height: widthPx,
+              borderRadius: "50%",
+              transform: "translateY(-50%)",
+            }}
+          />
+        </>
+      );
+  }
 }
