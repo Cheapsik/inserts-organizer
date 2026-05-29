@@ -29,6 +29,7 @@ import {
   resolveLayerHeight,
   type InsertLayer,
 } from "@/lib/layer-utils";
+import { traysExportRef } from "@/lib/trays-export-ref";
 
 const WALL_3D_TO_LOCAL: Record<TrayWall3D, FingerSlotWallKey> = {
   left: "left",
@@ -572,7 +573,7 @@ function LayerGroup3D({
   const labelY = mmToUnits(resolvedHeight + 12);
 
   return (
-    <animated.group position-y={y}>
+    <animated.group position-y={y} userData={{ layerIndex: index }}>
         {isActive && (
           <pointLight
             position={[0, mmToUnits(resolvedHeight + 30), 0]}
@@ -671,21 +672,23 @@ function SceneContent({ exploded }: { exploded: boolean }) {
         <Environment preset="warehouse" environmentIntensity={isLight ? 0.9 : 0.65} />
         <BoxContainer boxW={boxW} boxH={boxH} boxD={boxD} colors={colors} />
         {stackOverflow && <CeilingLimit boxW={boxW} boxH={boxH} boxD={boxD} />}
-        {layers.map((layer, i) => (
-          <LayerGroup3D
-            key={layer.id}
-            layer={layer}
-            index={i}
-            assembledY={assembledOffsets[i] ?? 0}
-            explodedY={explodedOffsets[i] ?? 0}
-            resolvedHeight={resolvedHeights[i] ?? 0}
-            exploded={exploded}
-            isActive={layer.id === activeLayerId}
-            isStackOverflow={overflowingLayerIds.includes(layer.id)}
-            boxW={boxW}
-            boxH={boxH}
-          />
-        ))}
+        <group ref={traysExportRef}>
+          {layers.map((layer, i) => (
+            <LayerGroup3D
+              key={layer.id}
+              layer={layer}
+              index={i}
+              assembledY={assembledOffsets[i] ?? 0}
+              explodedY={explodedOffsets[i] ?? 0}
+              resolvedHeight={resolvedHeights[i] ?? 0}
+              exploded={exploded}
+              isActive={layer.id === activeLayerId}
+              isStackOverflow={overflowingLayerIds.includes(layer.id)}
+              boxW={boxW}
+              boxH={boxH}
+            />
+          ))}
+        </group>
         {exploded &&
           layers.map((layer, i) => {
             if (i >= layers.length - 1) return null;

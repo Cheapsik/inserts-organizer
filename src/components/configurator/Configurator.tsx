@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -35,13 +35,17 @@ import {
   snap,
 } from "@/lib/insert-types";
 import { buildShareUrl, extractShareableState, isShareUrlTooLong } from "@/lib/serialize-config";
+import { exportToSTL } from "@/lib/export-stl";
+import { hasAnyFingerSlot, resolveFingerSlots } from "@/lib/finger-slots";
+import {
+  computeLayerAssembledOffsets,
+  computeLayerExplodedOffsets,
+} from "@/lib/layer-utils";
+import { traysExportRef } from "@/lib/trays-export-ref";
 import { toast } from "sonner";
-import { Link2 } from "lucide-react";
+import { Download, Link2, Loader2 } from "lucide-react";
+import { Scene3D } from "@/components/configurator/Scene3D";
 import type { ReactNode } from "react";
-
-const Scene3D = lazy(() =>
-  import("@/components/configurator/Scene3D").then((m) => ({ default: m.Scene3D })),
-);
 
 export function Configurator() {
   return (
@@ -361,6 +365,7 @@ function ConfiguratorInner() {
 
               <ThemeToggle />
               <GamePresetPicker iconOnly />
+              <StlExportButton isExploded={isExploded} viewMode={viewMode} />
               <ShareButton />
             </GlassPanel>
           </WidgetEntrance>
@@ -407,6 +412,87 @@ function DragGhostChip() {
     >
       {m.name} · {formatMm(ghost.w)}×{formatMm(ghost.h)} mm
     </div>
+  );
+}
+
+function StlExportButton({
+  viewMode,
+  isExploded,
+}: {
+  viewMode: "2d" | "3d";
+  isExploded: boolean;
+}) {
+  const layers = useConfigurator((s) => s.layers);
+  const [exporting, setExporting] = useState(false);
+  const [flashSuccess, setFlashSuccess] = useState(false);
+
+  const hasModules = layers.some((l) => l.placedModules.length > 0);
+
+  const hasFingerSlots = layers.some((layer) =>
+    layer.placedModules.some((p) => {
+      const m = getModule(p.moduleId);
+      return hasAnyFingerSlot(resolveFingerSlots(p, m));
+    }),
+  );
+
+  const handleExport = async () => {
+    if (exporting) return;
+
+    if (viewMode === "2d") {
+      toast.info("Przełącz na widok 3D, aby wyeksportować plik STL.");
+      return;
+    }
+
+    if (!hasModules) {
+      toast.error("Brak modułów do eksportu.");
+      return;
+    }
+
+    setExporting(true);
+
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    const assembled = computeLayerAssembledOffsets(layers);
+    const exploded = computeLayerExplodedOffsets(assembled);
+    const layerYCorrectionsMm = isExploded
+      ? layers.map((_, i) => (assembled[i] ?? 0) - (exploded[i] ?? 0))
+      : layers.map(() => 0);
+
+    const ok = exportToSTL(traysExportRef, { layerYCorrectionsMm });
+
+    setExporting(false);
+
+    if (!ok) {
+      toast.error("Nie udało się wygenerować pliku STL.");
+      return;
+    }
+
+    if (hasFingerSlots) {
+      toast.warning(
+        "Plik STL zawiera wycięcia na palec – przed drukiem upewnij się, że slicer naprawił geometrię (Repair Mesh).",
+      );
+    } else {
+      toast.success("Plik STL gotowy do druku!");
+    }
+
+    setFlashSuccess(true);
+    window.setTimeout(() => setFlashSuccess(false), 1000);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handleExport()}
+      title="Pobierz plik STL"
+      disabled={exporting}
+      className={`relative flex h-4 w-4 items-center justify-center transition-colors ${
+        flashSuccess
+          ? "text-green-500"
+          : "text-[var(--spatial-icon)] hover:text-[var(--spatial-accent)]"
+      } disabled:opacity-60`}
+    >
+      {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+    </button>
   );
 }
 
