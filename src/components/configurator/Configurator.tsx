@@ -9,6 +9,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { GamePresetPicker } from "@/components/configurator/GamePresetPicker";
 import { ModuleLibrary } from "@/components/configurator/ModuleLibrary";
 import { Canvas, CANVAS_DROPPABLE_ID } from "@/components/configurator/Canvas";
 import { SummaryPanel } from "@/components/configurator/SummaryPanel";
@@ -282,6 +283,7 @@ function ConfiguratorInner() {
             {viewMode === "3d" && (
               <ExplodedViewToggle active={explodedView} onChange={setExplodedView} />
             )}
+            <GamePresetPicker />
             <ShareButton />
           </div>
 
