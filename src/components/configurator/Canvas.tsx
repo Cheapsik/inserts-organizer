@@ -13,7 +13,6 @@ import { useConfigurator } from "@/lib/configurator-context";
 import type { DragGhost } from "@/lib/configurator-context";
 import { toast } from "sonner";
 import { PlacedModuleItem } from "./PlacedModuleItem";
-import { StackHeightBar } from "./StackHeightBar";
 
 export const CANVAS_DROPPABLE_ID = "canvas-droppable";
 
@@ -29,16 +28,11 @@ export function Canvas({ onCanvasRect, onPxPerMm }: Props) {
   const ghost = useConfigurator((s) => s.ghost);
   const boxWidth = useConfigurator((s) => s.boxWidth);
   const boxHeight = useConfigurator((s) => s.boxHeight);
-  const boxDepth = useConfigurator((s) => s.boxDepth);
-  const resolvedHeights = useConfigurator((s) => s.resolvedHeights);
-  const stackHeight = useConfigurator((s) => s.stackHeight);
-  const overflowingLayerIds = useConfigurator((s) => s.overflowingLayerIds);
   const selectedInstanceIds = useConfigurator((s) => s.selectedInstanceIds);
   const mergeSelected = useConfigurator((s) => s.mergeSelected);
   const clearSelection = useConfigurator((s) => s.clearSelection);
   const { setNodeRef, isOver } = useDroppable({ id: CANVAS_DROPPABLE_ID });
 
-  const activeLayer = layers.find((l) => l.id === activeLayerId);
   const ghostModules = layers.filter((l) => l.id !== activeLayerId).flatMap((l) => l.placedModules);
 
   const innerRef = useRef<HTMLDivElement | null>(null);
@@ -62,33 +56,38 @@ export function Canvas({ onCanvasRect, onPxPerMm }: Props) {
     update();
     const ro = new ResizeObserver(update);
     if (innerRef.current) ro.observe(innerRef.current);
-    window.addEventListener("scroll", update, true);
     window.addEventListener("resize", update);
     return () => {
       ro.disconnect();
-      window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
     };
   }, [onPxPerMm, onCanvasRect, boxWidth, boxHeight]);
 
   const gridStep = GRID_MM * pxPerMm;
-  const majorStep = gridStep * 5;
 
   const showGhost = !!ghost && ghost.source === "library" && ghost.inBounds;
   const showMergeBar = selectedInstanceIds.length > 1;
 
   const handleMerge = () => {
     const result = mergeSelected();
-    if (result.ok) {
-      toast.success("Modules merged — they now move as one unit.");
-    } else {
-      toast.error(result.error ?? "Could not merge modules.");
-    }
+    if (result.ok) toast.success("Moduły połączone.");
+    else toast.error(result.error ?? "Nie udało się połączyć modułów.");
   };
 
   return (
-    <div className="relative flex flex-1 items-center justify-center overflow-hidden p-6">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,oklch(0.72_0.18_255/0.08),transparent_60%)]" />
+    <div className="absolute inset-0 overflow-hidden">
+      {/* Full-viewport void grid */}
+      <div
+        className="canvas-grid-mask pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, var(--spatial-grid) 1px, transparent 1px),
+            linear-gradient(to bottom, var(--spatial-grid) 1px, transparent 1px)
+          `,
+          backgroundSize: pxPerMm ? `${gridStep}px ${gridStep}px` : undefined,
+        }}
+        aria-hidden
+      />
 
       {showMergeBar && (
         <MergeActionBar
@@ -98,57 +97,27 @@ export function Canvas({ onCanvasRect, onPxPerMm }: Props) {
         />
       )}
 
-      <div className="relative flex h-full w-full max-h-full max-w-full items-center justify-center gap-4">
+      {/* Box boundary — centered wireframe on the void */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <div
           className="relative"
           style={{
+            width: `min(72vw, calc(72vh * ${boxWidth / boxHeight}))`,
             aspectRatio: `${boxWidth} / ${boxHeight}`,
-            width: "min(100%, calc(100vh - 220px))",
-            maxWidth: "100%",
-            maxHeight: "100%",
           }}
         >
-          <div className="absolute -top-6 left-0 right-0 flex items-center justify-center gap-2 font-mono text-[11px] text-muted-foreground">
-            <span className="h-px w-8 bg-border" />
-            {formatMm(boxWidth)} mm
-            {activeLayer && (
-              <>
-                <span className="text-muted-foreground/40">·</span>
-                <span className="text-primary/90">{activeLayer.name}</span>
-              </>
-            )}
-            <span className="h-px w-8 bg-border" />
-          </div>
-          <div className="absolute -left-12 top-0 bottom-0 flex items-center justify-center font-mono text-[11px] text-muted-foreground [writing-mode:vertical-rl] rotate-180">
-            <span className="my-1 h-8 w-px bg-border" />
-            {formatMm(boxHeight)} mm
-            <span className="my-1 h-8 w-px bg-border" />
-          </div>
-
           <div
             ref={setRefs}
-            className={`relative h-full w-full overflow-hidden rounded-lg border-2 transition-colors ${
-              isOver ? "border-primary shadow-[var(--shadow-glow)]" : "border-white/10"
-            }`}
+            className="relative h-full w-full bg-transparent"
             onClick={() => clearSelection()}
             style={{
-              background: "oklch(0.13 0.012 260)",
-              backgroundImage: pxPerMm
-                ? `
-                  linear-gradient(to right, var(--grid-line-strong) 1px, transparent 1px),
-                  linear-gradient(to bottom, var(--grid-line-strong) 1px, transparent 1px),
-                  linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
-                  linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px)
-                `
-                : undefined,
-              backgroundSize: `${majorStep}px ${majorStep}px, ${majorStep}px ${majorStep}px, ${gridStep}px ${gridStep}px, ${gridStep}px ${gridStep}px`,
-              boxShadow: "inset 0 0 80px oklch(0 0 0 / 0.6)",
+              border: "1px solid #ff8c00",
+              boxShadow: isOver
+                ? "0 0 32px rgba(255,140,0,0.5), 0 0 20px rgba(255,140,0,0.3)"
+                : "0 0 20px rgba(255,140,0,0.3)",
+              transition: "box-shadow 0.25s ease",
             }}
           >
-            <div className="pointer-events-none absolute left-2 top-2 font-mono text-[10px] text-muted-foreground/60">
-              0,0
-            </div>
-
             {ghostModules.map((p) => (
               <GhostModuleOutline key={p.instanceId} placed={p} pxPerMm={pxPerMm} />
             ))}
@@ -163,27 +132,17 @@ export function Canvas({ onCanvasRect, onPxPerMm }: Props) {
 
             {placed.length === 0 && !showGhost && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="rounded-lg border border-dashed border-white/10 px-6 py-4 text-center">
-                  <div className="text-sm font-medium text-muted-foreground">Empty Insert Bay</div>
-                  <div className="mt-1 text-xs text-muted-foreground/70">
-                    Drag modules from the library to begin
-                  </div>
-                  <div className="mt-2 text-[10px] text-muted-foreground/50">
-                    Shift+click to multi-select · Merge adjacent modules
-                  </div>
-                </div>
+                <p className="font-mono text-[11px] text-[var(--spatial-canvas-hint)]">
+                  Przeciągnij moduły tutaj
+                </p>
               </div>
             )}
           </div>
-        </div>
 
-        <StackHeightBar
-          boxDepth={boxDepth}
-          layers={layers}
-          resolvedHeights={resolvedHeights}
-          overflowingLayerIds={overflowingLayerIds}
-          stackHeight={stackHeight}
-        />
+          <p className="pointer-events-none absolute -bottom-6 left-0 right-0 text-center font-mono text-[11px] text-[var(--spatial-text-secondary)]">
+            {formatMm(boxWidth)} × {formatMm(boxHeight)} mm
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -194,14 +153,13 @@ function GhostModuleOutline({ placed, pxPerMm }: { placed: PlacedModule; pxPerMm
   const { w, h } = getRotatedSize(m, placed.rotation);
   return (
     <div
-      className="pointer-events-none absolute rounded-md border border-white/20"
+      className="pointer-events-none absolute border border-[var(--spatial-ghost-outline)]"
       style={{
         left: placed.x * pxPerMm,
         top: placed.y * pxPerMm,
         width: w * pxPerMm,
         height: h * pxPerMm,
-        opacity: 0.15,
-        background: "oklch(0.55 0 0 / 0.25)",
+        opacity: 0.06,
         zIndex: 1,
       }}
       aria-hidden
@@ -222,24 +180,24 @@ function MergeActionBar({
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="absolute left-1/2 top-3 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-sky-400/40 bg-card/95 px-3 py-2 shadow-xl backdrop-blur-md"
+      className="absolute left-1/2 top-[88px] z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[var(--spatial-glass-border)] px-4 py-2 shadow-[var(--spatial-glass-shadow)] backdrop-blur-[20px]"
+      style={{ background: "var(--spatial-merge-glass)" }}
     >
-      <span className="font-mono text-[11px] text-muted-foreground">{count} selected</span>
+      <span className="font-mono text-[11px] text-[var(--spatial-text-secondary)]">{count} zazn.</span>
       <button
         type="button"
         onClick={onMerge}
-        className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-400"
+        className="flex items-center gap-1.5 rounded-full bg-[var(--spatial-accent)] px-3 py-1 text-xs font-semibold text-black shadow-[0_0_12px_rgba(255,140,0,0.6)]"
       >
         <Link2 className="h-3.5 w-3.5" />
-        Merge Together
+        Połącz
       </button>
       <button
         type="button"
         onClick={onCancel}
-        className="flex items-center gap-1 rounded-lg border border-panel-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+        className="text-[var(--spatial-icon)] hover:text-[var(--spatial-text-primary)]"
       >
         <X className="h-3.5 w-3.5" />
-        Cancel
       </button>
     </motion.div>
   );
@@ -259,35 +217,20 @@ function SnapGhost({ ghost, pxPerMm }: { ghost: DragGhost; pxPerMm: number }) {
         height: ghost.h * pxPerMm,
       }}
       transition={{ type: "spring", stiffness: 800, damping: 40, mass: 0.4 }}
-      style={{
-        position: "absolute",
-        zIndex: 60,
-        pointerEvents: "none",
-      }}
+      style={{ position: "absolute", zIndex: 60, pointerEvents: "none" }}
     >
       <div
         className="animate-ghost-pulse h-full w-full"
         style={{
           background: bad
-            ? `repeating-linear-gradient(45deg, var(--destructive) 0 8px, transparent 8px 16px)`
-            : `linear-gradient(135deg, ${m.color}55, ${m.color}20)`,
-          border: bad ? `2px dashed var(--destructive)` : `2px dashed rgba(255,255,255,0.8)`,
-          boxShadow: bad
-            ? "0 0 30px -5px var(--destructive)"
-            : `0 0 30px -5px ${m.color}, inset 0 0 0 1px ${m.color}80`,
-          borderRadius: 6,
-          opacity: 0.6,
+            ? `repeating-linear-gradient(45deg, #f87171 0 8px, transparent 8px 16px)`
+            : `linear-gradient(135deg, ${m.color}66, ${m.color}22)`,
+          border: bad ? "1px dashed #f87171" : "1px dashed rgba(255,140,0,0.8)",
+          boxShadow: "0 24px 48px rgba(0,0,0,0.9), 0 8px 20px rgba(255,140,0,0.35)",
+          borderRadius: 4,
+          opacity: 0.75,
         }}
-      >
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 text-center">
-          <div className="font-mono text-[10px] font-semibold uppercase tracking-wider text-white drop-shadow">
-            {formatMm(ghost.x)}, {formatMm(ghost.y)} mm
-          </div>
-          <div className="font-mono text-[10px] text-white/80">
-            {formatMm(ghost.w)}×{formatMm(ghost.h)}
-          </div>
-        </div>
-      </div>
+      />
     </motion.div>
   );
 }

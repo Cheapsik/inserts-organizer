@@ -275,19 +275,18 @@ export function CustomModuleDialog({ compact = false }: { compact?: boolean }) {
         compact ? (
           <button
             type="button"
-            className="flex items-center gap-1 rounded-md border border-dashed border-primary/40 px-2 py-1 text-[10px] font-medium text-primary transition-colors hover:border-primary/70 hover:bg-primary/10"
-            title="Create custom module"
+            className="flex items-center gap-1 rounded-md border border-dashed border-[#f97316]/50 px-2 py-1 text-[10px] font-medium text-[#f97316] transition-colors hover:border-[#f97316] hover:bg-[#20110b]"
+            title="Dodaj własny moduł"
           >
             <Plus className="h-3 w-3" />
-            Custom
+            Własny
           </button>
         ) : (
           <button
             type="button"
-            className="group flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary/70 hover:bg-primary/10"
+            className="mt-1 w-full rounded-xl border border-dashed border-[var(--spatial-accent-muted)] py-2.5 text-xs font-medium text-[var(--spatial-accent)] transition-colors hover:bg-[var(--spatial-accent-soft)]"
           >
-            <Plus className="h-4 w-4" />
-            Create Custom Module
+            + Dodaj własny moduł
           </button>
         )
       }

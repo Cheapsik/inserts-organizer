@@ -26,7 +26,7 @@ import { GAME_PRESETS, formatPresetDimensions, type GamePreset } from "@/data/ga
 import { useConfigurator } from "@/lib/configurator-store";
 import { cn } from "@/lib/utils";
 
-export function GamePresetPicker() {
+export function GamePresetPicker({ iconOnly = false }: { iconOnly?: boolean }) {
   const boxWidth = useConfigurator((s) => s.boxWidth);
   const boxHeight = useConfigurator((s) => s.boxHeight);
   const boxDepth = useConfigurator((s) => s.boxDepth);
@@ -85,23 +85,33 @@ export function GamePresetPicker() {
       <div className="flex items-center gap-1">
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
-            <button
-              type="button"
-              role="combobox"
-              aria-expanded={open}
-              aria-label="Select game preset"
-              className="flex max-w-[220px] items-center gap-1.5 rounded-full border border-panel-border bg-card/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:text-foreground"
-            >
-              <Gamepad2 className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{activePreset?.name ?? "Select Game"}</span>
-              <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
-            </button>
+            {iconOnly ? (
+              <button
+                type="button"
+                aria-label="Wybierz preset gry"
+                className="text-[var(--spatial-icon)] transition-colors hover:text-[var(--spatial-accent)]"
+              >
+                <Gamepad2 size={16} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                role="combobox"
+                aria-expanded={open}
+                aria-label="Select game preset"
+                className="flex max-w-[180px] items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300 transition-all hover:bg-white/10 hover:text-white"
+              >
+                <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-[#ff6b00]" />
+                <span className="truncate">{activePreset?.name ?? "Preset"}</span>
+                <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+              </button>
+            )}
           </PopoverTrigger>
           <PopoverContent className="w-[380px] p-0" align="center">
             <Command>
-              <CommandInput placeholder="Search games…" />
+              <CommandInput placeholder="Szukaj gry…" />
               <CommandList>
-                <CommandEmpty>No games found.</CommandEmpty>
+                <CommandEmpty>Nie znaleziono gier.</CommandEmpty>
                 <CommandGroup>
                   <CommandItem value="custom manual dimensions" onSelect={handleSelectCustom}>
                     <Check
@@ -110,12 +120,12 @@ export function GamePresetPicker() {
                         activePresetId === null ? "opacity-100" : "opacity-0",
                       )}
                     />
-                    <span className="font-medium">Custom</span>
-                    <span className="ml-2 text-xs text-muted-foreground">Manual dimensions</span>
+                    <span className="font-medium">Własne</span>
+                    <span className="ml-2 text-xs text-muted-foreground">Ręczne wymiary</span>
                   </CommandItem>
                 </CommandGroup>
                 <CommandSeparator />
-                <CommandGroup heading="Popular games">
+                <CommandGroup heading="Popularne gry">
                   {GAME_PRESETS.map((preset) => (
                     <CommandItem
                       key={preset.id}
@@ -173,16 +183,16 @@ export function GamePresetPicker() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Load preset for {pendingPreset?.name}?</AlertDialogTitle>
+            <AlertDialogTitle>Wczytać preset dla {pendingPreset?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will update box dimensions to{" "}
-              {pendingPreset ? formatPresetDimensions(pendingPreset) : ""}. Existing modules will be
-              preserved but may need repositioning.
+              Wymiary pudełka zostaną ustawione na{" "}
+              {pendingPreset ? formatPresetDimensions(pendingPreset) : ""}. Istniejące moduły
+              zostaną zachowane, ale mogą wymagać przesunięcia.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCancelPreset}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleApplyPreset}>Apply</AlertDialogAction>
+            <AlertDialogCancel onClick={handleCancelPreset}>Anuluj</AlertDialogCancel>
+            <AlertDialogAction onClick={handleApplyPreset}>Zastosuj</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

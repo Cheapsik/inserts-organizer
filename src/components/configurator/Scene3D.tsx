@@ -1,9 +1,10 @@
-import { Canvas as R3FCanvas } from "@react-three/fiber";
+import { Canvas as R3FCanvas, useThree } from "@react-three/fiber";
 import { Html, OrbitControls, Environment } from "@react-three/drei";
 import { animated, useSpring } from "@react-spring/three";
 import { Base, Geometry, Subtraction } from "@react-three/csg";
-import { Suspense, useEffect, useMemo, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import * as THREE from "three";
+import { useTheme } from "next-themes";
 import { formatMm, getModule, getRotatedSize, type PlacedModule } from "@/lib/insert-types";
 import {
   resolveFingerSlots,
@@ -205,7 +206,7 @@ function TrayMaterial({
   const overflowEmissive = useMemo(() => new THREE.Color("#ff2200"), []);
 
   const emissive = stackOverflow ? overflowEmissive : color;
-  const emissiveIntensity = stackOverflow ? 0.3 : isOverlapping ? 0.45 : 0.04;
+  const emissiveIntensity = stackOverflow ? 0.3 : isOverlapping ? 0.45 : 0.08;
 
   return (
     <meshStandardMaterial
@@ -215,7 +216,7 @@ function TrayMaterial({
       emissive={emissive}
       emissiveIntensity={emissiveIntensity}
       transparent={inactiveLayer}
-      opacity={inactiveLayer ? 0.35 : 1}
+      opacity={inactiveLayer ? 0.55 : 1}
       depthWrite={!inactiveLayer}
     />
   );
@@ -360,11 +361,60 @@ function InsertTray3D({
   );
 }
 
-const WALL_MATERIAL = (
-  <meshStandardMaterial color="#1a1a2e" transparent opacity={0.4} roughness={0.5} metalness={0.1} />
-);
+function readSpatialVar(name: string, fallback: string) {
+  if (typeof document === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
 
-function BoxContainer({ boxW, boxH, boxD }: { boxW: number; boxH: number; boxD: number }) {
+function useSpatial3DColors() {
+  const { resolvedTheme } = useTheme();
+  const [colors, setColors] = useState({
+    bg: "#0c0a0a",
+    fog: "#0c0a0a",
+    container: "#c4cad4",
+    floor: "#aeb4bf",
+    gridPrimary: "#8a909a",
+    gridSecondary: "#3d424a",
+  });
+
+  useEffect(() => {
+    setColors({
+      bg: readSpatialVar("--spatial-3d-bg", "#0c0a0a"),
+      fog: readSpatialVar("--spatial-3d-fog", "#0c0a0a"),
+      container: readSpatialVar("--spatial-3d-container", "#c4cad4"),
+      floor: readSpatialVar("--spatial-3d-floor", "#aeb4bf"),
+      gridPrimary: readSpatialVar("--spatial-3d-grid-primary", "#8a909a"),
+      gridSecondary: readSpatialVar("--spatial-3d-grid-secondary", "#3d424a"),
+    });
+  }, [resolvedTheme]);
+
+  return colors;
+}
+
+function ContainerMaterial({ color }: { color: string }) {
+  return (
+    <meshStandardMaterial color={color} roughness={0.48} metalness={0.06} envMapIntensity={0.85} />
+  );
+}
+
+function FloorMaterial({ color }: { color: string }) {
+  return (
+    <meshStandardMaterial color={color} roughness={0.62} metalness={0.04} envMapIntensity={0.7} />
+  );
+}
+
+function BoxContainer({
+  boxW,
+  boxH,
+  boxD,
+  colors,
+}: {
+  boxW: number;
+  boxH: number;
+  boxD: number;
+  colors: ReturnType<typeof useSpatial3DColors>;
+}) {
   const W = mmToUnits(boxW);
   const D = mmToUnits(boxH);
   const wallH = mmToUnits(boxD);
@@ -379,14 +429,18 @@ function BoxContainer({ boxW, boxH, boxD }: { boxW: number; boxH: number; boxD: 
 
   return (
     <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]} receiveShadow>
+        <planeGeometry args={[W, D]} />
+        <FloorMaterial color={colors.floor} />
+      </mesh>
       <gridHelper
-        args={[Math.max(W, D), Math.max(boxW, boxH) / 10, "#3b4658", "#252b39"]}
-        position={[0, 0.001, 0]}
+        args={[Math.max(W, D), Math.max(boxW, boxH) / 10, colors.gridPrimary, colors.gridSecondary]}
+        position={[0, 0.004, 0]}
       />
       {walls.map((wall, i) => (
         <mesh key={i} position={wall.p} receiveShadow>
           <boxGeometry args={wall.s} />
-          {WALL_MATERIAL}
+          <ContainerMaterial color={colors.container} />
         </mesh>
       ))}
     </group>
@@ -414,7 +468,7 @@ function CeilingLimit({ boxW, boxH, boxD }: { boxW: number; boxH: number; boxD: 
   );
 }
 
-const GAP_LINE_COLOR = "#6688cc";
+const GAP_LINE_COLOR = "#facc6b";
 
 /**
  * Thin cross + height label in the center of the explode gap below layer[i].
@@ -477,7 +531,7 @@ function LayerGapMarker({
         />
       </lineSegments>
       <Html position={[0, 0, 0]} center distanceFactor={14} zIndexRange={[100, 0]}>
-        <div className="pointer-events-none whitespace-nowrap rounded border border-[#6688cc]/40 bg-card/90 px-2 py-0.5 font-mono text-[10px] text-[#9ab4e8] shadow-md backdrop-blur">
+        <div className="pointer-events-none whitespace-nowrap rounded border border-[#f97316]/30 bg-[#070509]/90 px-2 py-0.5 font-mono-prz text-[10px] text-[#facc6b] shadow-[0_0_12px_rgba(249,115,22,0.2)] backdrop-blur-md">
           {layerName} · {formatMm(resolvedHeight)} mm
         </div>
       </Html>
@@ -522,9 +576,9 @@ function LayerGroup3D({
         {isActive && (
           <pointLight
             position={[0, mmToUnits(resolvedHeight + 30), 0]}
-            intensity={0.6}
-            color="#4488ff"
-            distance={mmToUnits(200)}
+            intensity={1.1}
+            color="#ffe8cc"
+            distance={mmToUnits(250)}
           />
         )}
         {layer.placedModules.map((p) => (
@@ -539,7 +593,7 @@ function LayerGroup3D({
         ))}
         {exploded && (
           <Html position={[0, labelY, 0]} center distanceFactor={12} zIndexRange={[100, 0]}>
-            <div className="pointer-events-none whitespace-nowrap rounded-md border border-panel-border bg-card/90 px-2 py-1 font-mono text-[10px] text-foreground shadow-lg backdrop-blur">
+            <div className="pointer-events-none whitespace-nowrap rounded-md border border-[#f97316]/25 bg-[#070509]/90 px-2 py-1 font-mono-prz text-[10px] text-[#fef2e2] shadow-lg backdrop-blur-md">
               {layer.name} — {formatMm(resolvedHeight)}mm
             </div>
           </Html>
@@ -548,7 +602,18 @@ function LayerGroup3D({
   );
 }
 
+function ToneMappingSync({ exposure }: { exposure: number }) {
+  const { gl } = useThree();
+  useEffect(() => {
+    gl.toneMappingExposure = exposure;
+  }, [gl, exposure]);
+  return null;
+}
+
 function SceneContent({ exploded }: { exploded: boolean }) {
+  const { resolvedTheme } = useTheme();
+  const colors = useSpatial3DColors();
+  const isLight = resolvedTheme === "light";
   const layers = useConfigurator((s) => s.layers);
   const activeLayerId = useConfigurator((s) => s.activeLayerId);
   const overflowingLayerIds = useConfigurator((s) => s.overflowingLayerIds);
@@ -567,29 +632,44 @@ function SceneContent({ exploded }: { exploded: boolean }) {
 
   return (
     <>
-      <color attach="background" args={["#0b0f1a"]} />
-      <fog attach="fog" args={["#0b0f1a", mmToUnits(maxSide) * 1.5, mmToUnits(maxSide) * 4]} />
+      <ToneMappingSync exposure={isLight ? 1.2 : 1.45} />
+      <color attach="background" args={[colors.bg]} />
+      <fog attach="fog" args={[colors.fog, mmToUnits(maxSide) * 2.5, mmToUnits(maxSide) * 7]} />
 
-      <ambientLight intensity={0.55} />
+      <ambientLight intensity={isLight ? 0.9 : 0.62} color="#fff8f0" />
       <directionalLight
         position={[mmToUnits(300), mmToUnits(500), mmToUnits(300)]}
-        intensity={1.4}
+        intensity={2.2}
+        color="#fffaf5"
         castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
         shadow-camera-left={-mmToUnits(maxSide)}
         shadow-camera-right={mmToUnits(maxSide)}
         shadow-camera-top={mmToUnits(maxSide)}
         shadow-camera-bottom={-mmToUnits(maxSide)}
+        shadow-bias={-0.0002}
       />
       <directionalLight
         position={[-mmToUnits(200), mmToUnits(300), -mmToUnits(100)]}
-        intensity={0.4}
+        intensity={0.55}
+        color="#d4c8bc"
+      />
+      <directionalLight
+        position={[0, mmToUnits(boxD * 0.5), mmToUnits(maxSide * 0.6)]}
+        intensity={0.35}
+        color="#ffffff"
+      />
+      <pointLight
+        position={[mmToUnits(maxSide * 0.4), mmToUnits(boxD * 0.8), mmToUnits(maxSide * 0.3)]}
+        intensity={0.75}
+        color="#ffd4a8"
+        distance={mmToUnits(maxSide * 2.5)}
       />
 
       <Suspense fallback={null}>
-        <Environment preset="city" />
-        <BoxContainer boxW={boxW} boxH={boxH} boxD={boxD} />
+        <Environment preset="warehouse" environmentIntensity={isLight ? 0.9 : 0.65} />
+        <BoxContainer boxW={boxW} boxH={boxH} boxD={boxD} colors={colors} />
         {stackOverflow && <CeilingLimit boxW={boxW} boxH={boxH} boxD={boxD} />}
         {layers.map((layer, i) => (
           <LayerGroup3D
@@ -645,7 +725,7 @@ export function Scene3D({ exploded }: { exploded: boolean }) {
   const camDist = mmToUnits(maxSide) * 1.6;
 
   return (
-    <div className="relative h-full w-full">
+    <div className="absolute inset-0 h-full w-full">
       <R3FCanvas
         shadows
         camera={{
@@ -653,13 +733,22 @@ export function Scene3D({ exploded }: { exploded: boolean }) {
           fov: 35,
         }}
         dpr={[1, 2]}
-        gl={{ antialias: true, preserveDrawingBuffer: false }}
+        gl={{
+          antialias: true,
+          preserveDrawingBuffer: false,
+          powerPreference: "high-performance",
+        }}
+        onCreated={({ gl }) => {
+          gl.toneMapping = THREE.ACESFilmicToneMapping;
+          gl.toneMappingExposure = 1.45;
+          gl.shadowMap.type = THREE.PCFSoftShadowMap;
+        }}
       >
         <SceneContent exploded={exploded} />
       </R3FCanvas>
 
-      <div className="pointer-events-none absolute bottom-3 left-3 rounded-md border border-panel-border bg-card/70 px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground backdrop-blur">
-        Drag to orbit · Scroll to zoom · Right-click to pan
+      <div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-[var(--spatial-surface-border)] bg-[var(--spatial-surface)] px-4 py-1.5 font-mono-prz text-[10px] text-[var(--spatial-text-muted)] backdrop-blur-xl">
+        Obróć · Przybliż · Przesuń
       </div>
     </div>
   );

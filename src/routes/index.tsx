@@ -5,11 +5,11 @@ export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
-      { title: "Insert Configurator — Tabletop Foundry" },
+      { title: "Konfigurator insertu — Przegródka" },
       {
         name: "description",
         content:
-          "Design custom 3D-printed board game inserts with a precise drag-and-drop configurator. Snap-to-grid layout and collision detection.",
+          "Skonfiguruj insert do gry planszowej — przeciągnij moduły, ustaw warstwy i sprawdź układ w 2D lub 3D.",
       },
     ],
   }),

@@ -1,7 +1,7 @@
 import { useDraggable } from "@dnd-kit/core";
-import { motion } from "framer-motion";
+import { GripVertical } from "lucide-react";
 import { useMemo } from "react";
-import { BUILTIN_MODULES, formatMm, type InsertModule } from "@/lib/insert-types";
+import { BUILTIN_MODULES, type InsertModule } from "@/lib/insert-types";
 import { useConfigurator } from "@/lib/configurator-store";
 import { CustomModuleDialog, EditCustomModuleButton } from "./CustomModuleDialog";
 import { LayersPanel } from "./LayersPanel";
@@ -13,33 +13,33 @@ function LibraryItem({ module: m }: { module: InsertModule }) {
   });
 
   return (
-    <motion.div
+    <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      whileTap={{ scale: 0.99 }}
-      className={`group relative flex cursor-grab touch-none items-center gap-2 rounded-lg border border-panel-border bg-card/50 px-2 py-1.5 transition-colors hover:border-primary/35 hover:bg-card active:cursor-grabbing ${
-        isDragging ? "opacity-40" : ""
+      className={`group flex cursor-grab touch-none items-center gap-3 rounded-xl border border-transparent bg-[var(--spatial-surface)] p-2.5 transition-all duration-200 hover:translate-x-1 hover:border-[var(--spatial-surface-border)] hover:bg-[var(--spatial-surface-hover)] active:cursor-grabbing active:shadow-[0_24px_48px_var(--spatial-shadow-heavy)] ${
+        isDragging ? "opacity-30 shadow-[0_24px_48px_var(--spatial-shadow-heavy)]" : ""
       }`}
     >
-      <span
-        className="h-7 w-7 shrink-0 rounded border border-white/10"
-        style={{
-          background: `linear-gradient(135deg, ${m.color}55, ${m.color}20)`,
-          boxShadow: `inset 0 0 0 1px ${m.color}50`,
-        }}
+      <div
+        className="h-8 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: m.color }}
         aria-hidden
       />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-medium text-foreground">{m.name}</div>
-        <div className="font-mono text-[10px] text-muted-foreground">
-          {formatMm(m.width)}×{formatMm(m.height)}×{formatMm(m.depth)} mm
-        </div>
+        <p className="truncate text-[13px] font-medium text-[var(--spatial-module-text)]">
+          {m.name}
+        </p>
+        <p className="font-mono text-[11px] text-[var(--spatial-text-subtle)]">
+          {m.width}×{m.height}×{m.depth}mm
+        </p>
       </div>
-      {m.type === "custom" && (
-        <EditCustomModuleButton moduleId={m.id} />
-      )}
-    </motion.div>
+      {m.type === "custom" && <EditCustomModuleButton moduleId={m.id} />}
+      <GripVertical
+        size={14}
+        className="text-transparent transition-colors group-hover:text-[var(--spatial-text-faint)]"
+      />
+    </div>
   );
 }
 
@@ -51,21 +51,25 @@ export function ModuleLibrary() {
   );
 
   return (
-    <aside className="glass-panel flex h-full w-64 shrink-0 flex-col overflow-hidden rounded-2xl">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-panel-border px-3 py-2.5">
-        <span className="text-xs font-semibold text-foreground">Modules</span>
-        <CustomModuleDialog compact />
+    <>
+      <div className="flex items-center justify-between">
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--spatial-accent)]">
+          Moduły
+        </h3>
+        <span className="text-[10px] text-[var(--spatial-text-subtle)]">{modules.length} szt.</span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2.5">
-        <div className="space-y-1">
-          {modules.map((m) => (
-            <LibraryItem key={m.id} module={m} />
-          ))}
-        </div>
+      <div className="widget-scrollbar flex max-h-[32vh] flex-col gap-2 overflow-y-auto pr-1">
+        {modules.map((m) => (
+          <LibraryItem key={m.id} module={m} />
+        ))}
       </div>
+
+      <CustomModuleDialog />
+
+      <div className="h-[1px] w-full bg-[var(--spatial-surface-border)]" />
 
       <LayersPanel />
-    </aside>
+    </>
   );
 }

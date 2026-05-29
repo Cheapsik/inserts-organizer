@@ -94,20 +94,22 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
     : `linear-gradient(135deg, ${baseColor}50, ${baseColor}20)`;
 
   const borderClass = isSelected
-    ? "border-sky-400 shadow-[0_0_0_1px_oklch(0.72_0.18_255/0.9),inset_0_0_20px_oklch(0.72_0.18_255/0.35)]"
+    ? "border-[#ff6b00] shadow-[0_0_0_1px_rgba(255,107,0,0.9),0_20px_40px_rgba(0,0,0,0.85),0_8px_20px_rgba(255,107,0,0.35)]"
     : dragCollides
-      ? "border-destructive shadow-[0_0_24px_-2px_var(--destructive)]"
+      ? "border-destructive shadow-[0_20px_40px_rgba(0,0,0,0.8)]"
       : placed.isDepthOverflow
-        ? "border-destructive shadow-[0_0_28px_-2px_var(--destructive)] animate-pulse"
+        ? "border-destructive shadow-[0_20px_40px_rgba(0,0,0,0.8)] animate-pulse"
         : placed.isOutOfBounds
-          ? "border-destructive shadow-[0_0_28px_-2px_var(--destructive)] animate-pulse"
+          ? "border-destructive shadow-[0_20px_40px_rgba(0,0,0,0.8)] animate-pulse"
           : placed.isOverlapping
-            ? "border-destructive shadow-[0_0_24px_-2px_var(--destructive)]"
-            : isGroupHovered
-              ? "border-white/70 shadow-[0_0_18px_-2px_oklch(0.72_0.18_255/0.6)]"
-              : isGrouped
-                ? "border-white/40"
-                : "border-white/25 hover:border-white/60";
+            ? "border-destructive shadow-[0_20px_40px_rgba(0,0,0,0.8)]"
+            : isInActiveDrag
+              ? "border-[var(--spatial-module-border-hover)] shadow-[0_24px_48px_var(--spatial-shadow-heavy),0_12px_24px_rgba(255,107,0,0.4)]"
+              : isGroupHovered
+                ? "border-[var(--spatial-module-border-hover)] shadow-[0_8px_24px_var(--spatial-shadow-heavy)]"
+                : isGrouped
+                  ? "border-[var(--spatial-module-border)]"
+                  : "border-[var(--spatial-module-border)] hover:border-[var(--spatial-module-border-hover)]";
 
   const moduleEl = (
     <motion.div
@@ -117,7 +119,7 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
       animate={{ scale: 1, opacity: 1 }}
       exit={{ scale: 0.6, opacity: 0 }}
       transition={{ type: "spring", stiffness: 380, damping: 28 }}
-      className={`group cursor-grab rounded-md border-2 backdrop-blur-sm transition-shadow active:cursor-grabbing ${borderClass}`}
+      className={`group cursor-grab rounded-md border backdrop-blur-sm transition-shadow active:cursor-grabbing ${borderClass}`}
       onMouseEnter={() => placed.groupId && setHoveredGroupId(placed.groupId)}
       onMouseLeave={() => placed.groupId && setHoveredGroupId(null)}
     >
@@ -149,17 +151,19 @@ export function PlacedModuleItem({ placed, pxPerMm }: Props) {
         )}
 
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center">
-          <div className="truncate text-[11px] font-semibold text-white drop-shadow">{m.name}</div>
-          <div className="font-mono text-[10px] text-white/70">
+          <div className="truncate text-[11px] font-semibold text-[var(--spatial-module-label)] drop-shadow">
+            {m.name}
+          </div>
+          <div className="font-mono text-[10px] text-[var(--spatial-module-label-sub)]">
             {formatMm(m.width)}×{formatMm(m.height)}mm
           </div>
           {(placed.dividers?.length ?? 0) > 0 && (
-            <div className="font-mono text-[9px] text-white/50">
+            <div className="font-mono text-[9px] text-[var(--spatial-module-label-sub)]">
               {placed.dividers?.length ?? 0} div
             </div>
           )}
           {rampConfig.enabled && (
-            <div className="font-mono text-[9px] text-white/60">
+            <div className="font-mono text-[9px] text-[var(--spatial-module-label-sub)]">
               ramp {rampConfig.wall} · {formatMm(rampConfig.startHeight)} mm
             </div>
           )}

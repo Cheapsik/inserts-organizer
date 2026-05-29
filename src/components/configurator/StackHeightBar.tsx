@@ -16,7 +16,7 @@ export function StackHeightBar({
   overflowingLayerIds,
   stackHeight,
 }: Props) {
-  const barH = 160;
+  const barH = 180;
   const scale = boxDepth > 0 ? barH / boxDepth : 1;
   const overflow = stackHeight > boxDepth;
   let offset = 0;
@@ -39,12 +39,10 @@ export function StackHeightBar({
   const overflowPx = overflow ? (stackHeight - boxDepth) * scale : 0;
 
   return (
-    <div className="flex flex-col items-center gap-1.5">
-      <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-        Stack
-      </span>
+    <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-4 backdrop-blur-xl">
+      <span className="font-mono-prz text-[9px] uppercase tracking-[0.2em] text-slate-500">Stos</span>
       <div
-        className="relative w-5 rounded-md border border-white/15 bg-muted/30"
+        className="relative w-4 rounded-full border border-white/10 bg-black/20"
         style={{ height: barH }}
         title={`${formatMm(stackHeight)} / ${formatMm(boxDepth)} mm`}
       >
@@ -52,32 +50,25 @@ export function StackHeightBar({
           seg.h > 0 ? (
             <div
               key={seg.layer.id}
-              className="absolute left-0 right-0 rounded-sm transition-all"
+              className="absolute left-0.5 right-0.5 rounded-full transition-all"
               style={{
                 bottom: seg.bottom,
                 height: seg.h,
                 background: seg.isOverflow ? "var(--destructive)" : seg.color,
-                opacity: seg.isOverflow ? 0.9 : 0.75,
+                opacity: seg.isOverflow ? 0.9 : 0.85,
+                boxShadow: seg.isOverflow ? undefined : `0 0 6px ${seg.color}66`,
               }}
-              title={`${seg.layer.name}: ${formatMm(resolvedHeights[layers.indexOf(seg.layer)] ?? 0)}mm`}
             />
           ) : null,
         )}
         {overflowPx > 0 && (
           <div
-            className="absolute left-0 right-0 rounded-sm bg-destructive opacity-90"
-            style={{
-              bottom: barH,
-              height: overflowPx,
-              boxShadow: "0 0 12px var(--destructive)",
-            }}
+            className="absolute left-0.5 right-0.5 rounded-full bg-destructive"
+            style={{ bottom: barH, height: overflowPx }}
           />
         )}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/30" />
       </div>
-      <span
-        className={`font-mono text-[9px] ${overflow ? "text-destructive" : "text-muted-foreground"}`}
-      >
+      <span className={`font-mono-prz text-[10px] ${overflow ? "text-red-400" : "text-[#ff6b00]"}`}>
         {formatMm(stackHeight)}
       </span>
     </div>

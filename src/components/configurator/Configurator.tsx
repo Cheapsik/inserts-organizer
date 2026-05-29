@@ -13,6 +13,9 @@ import { GamePresetPicker } from "@/components/configurator/GamePresetPicker";
 import { ModuleLibrary } from "@/components/configurator/ModuleLibrary";
 import { Canvas, CANVAS_DROPPABLE_ID } from "@/components/configurator/Canvas";
 import { SummaryPanel } from "@/components/configurator/SummaryPanel";
+import { GlassPanel } from "@/components/configurator/GlassPanel";
+import { ThemeToggle } from "@/components/configurator/ThemeToggle";
+import { WidgetEntrance } from "@/components/configurator/WidgetEntrance";
 import { ConfiguratorProvider } from "@/lib/configurator-context";
 import {
   clampToBox,
@@ -24,7 +27,6 @@ import { computeCanvasDragSession } from "@/lib/canvas-drag";
 import {
   DIM_STEP_MM,
   formatMm,
-  GRID_MM,
   MAX_BOX_MM,
   MIN_BOX_MM,
   roundDim,
@@ -34,7 +36,8 @@ import {
 } from "@/lib/insert-types";
 import { buildShareUrl, extractShareableState, isShareUrlTooLong } from "@/lib/serialize-config";
 import { toast } from "sonner";
-import { Boxes, Box as BoxIcon, Layers3, Link2, UnfoldVertical } from "lucide-react";
+import { Link2 } from "lucide-react";
+import type { ReactNode } from "react";
 
 const Scene3D = lazy(() =>
   import("@/components/configurator/Scene3D").then((m) => ({ default: m.Scene3D })),
@@ -49,9 +52,16 @@ export function Configurator() {
 }
 
 function ConfiguratorInner() {
-  // Avoid SSR hydration mismatches from dnd-kit aria ids, number formatting, etc.
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    document.documentElement.classList.add("spatial-editor");
+    document.body.classList.add("spatial-editor");
+    return () => {
+      document.documentElement.classList.remove("spatial-editor");
+      document.body.classList.remove("spatial-editor");
+    };
+  }, []);
 
   const addModule = useConfigurator((s) => s.addModule);
   const moveModule = useConfigurator((s) => s.moveModule);
@@ -75,7 +85,6 @@ function ConfiguratorInner() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  /** Snap ghost for library → canvas drops only. */
   const computeLibraryGhost = useCallback(
     (event: DragStartEvent | DragMoveEvent, moduleId: string): DragGhost | null => {
       const canvasRect = canvasRectRef.current;
@@ -111,7 +120,7 @@ function ConfiguratorInner() {
         centerYpx >= canvasRect.top - SLACK &&
         centerYpx <= canvasRect.bottom + SLACK;
 
-      const others = useConfigurator.getState().placed; // active layer only
+      const others = useConfigurator.getState().placed;
       const ghostRect = { x: clamped.x, y: clamped.y, w, h };
       const collides = others.some((p) => {
         const om = getModule(p.moduleId);
@@ -245,13 +254,15 @@ function ConfiguratorInner() {
 
   if (!mounted) {
     return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <div className="glass-panel rounded-2xl px-6 py-4 text-sm text-muted-foreground">
-          Loading configurator…
-        </div>
-      </div>
+      <main className="spatial-stage relative h-screen w-screen select-none overflow-hidden">
+        <div className="spatial-void-glow absolute inset-0" />
+      </main>
     );
   }
+
+  const is2d = viewMode === "2d";
+  const is3d = viewMode === "3d" && !explodedView;
+  const isExploded = viewMode === "3d" && explodedView;
 
   return (
     <DndContext
@@ -261,66 +272,120 @@ function ConfiguratorInner() {
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="flex h-screen w-full flex-col gap-4 p-4">
-        {/* Header */}
-        <header className="glass-panel flex items-center justify-between rounded-2xl px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="btn-primary-glow flex h-9 w-9 items-center justify-center rounded-lg">
-              <Boxes className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                Tabletop Foundry
-              </div>
-              <h1 className="text-sm font-semibold text-foreground">
-                Board Game Insert Configurator
-              </h1>
-            </div>
-          </div>
+      <main
+        id="insert-configurator"
+        className="spatial-stage relative h-screen w-screen select-none overflow-hidden"
+      >
+        <div className="spatial-void-glow absolute inset-0" />
 
-          <div className="flex items-center gap-2">
-            <ViewToggle value={viewMode} onChange={setViewMode} />
-            {viewMode === "3d" && (
-              <ExplodedViewToggle active={explodedView} onChange={setExplodedView} />
-            )}
-            <GamePresetPicker />
-            <ShareButton />
-          </div>
-
-          <div className="hidden items-center gap-3 font-mono text-xs text-muted-foreground md:flex">
-            <DimInput label="W" value={boxWidth} onChange={(v) => setBoxDimensions({ width: v })} />
-            <DimInput
-              label="L"
-              value={boxHeight}
-              onChange={(v) => setBoxDimensions({ height: v })}
-            />
-            <DimInput label="D" value={boxDepth} onChange={(v) => setBoxDimensions({ depth: v })} />
-            <span className="h-3 w-px bg-border" />
-            <span>Grid: {GRID_MM} mm</span>
-          </div>
-        </header>
-
-        {/* Main */}
-        <div className="flex min-h-0 flex-1 gap-4">
-          <ModuleLibrary />
-          <main className="glass-panel relative flex min-w-0 flex-1 overflow-hidden rounded-2xl">
-            {viewMode === "2d" ? (
-              <Canvas onCanvasRect={onCanvasRect} onPxPerMm={setPxPerMm} />
-            ) : (
-              <Suspense
-                fallback={
-                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                    Loading 3D scene…
-                  </div>
-                }
-              >
-                <Scene3D exploded={explodedView} />
-              </Suspense>
-            )}
-          </main>
-          <SummaryPanel />
+        <div className="absolute inset-0 z-0">
+          {is2d ? (
+            <Canvas onCanvasRect={onCanvasRect} onPxPerMm={setPxPerMm} />
+          ) : (
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center text-[13px] text-[var(--spatial-text-secondary)]">
+                  Ładowanie widoku 3D…
+                </div>
+              }
+            >
+              <Scene3D exploded={isExploded} />
+            </Suspense>
+          )}
         </div>
-      </div>
+
+        <div className="pointer-events-none absolute inset-0 z-10">
+          {/* Widget A: Top center command bar */}
+          <WidgetEntrance
+            delay={0.1}
+            className="absolute left-1/2 top-[24px] z-50 -translate-x-1/2"
+          >
+            <GlassPanel className="flex items-center gap-6 px-6 py-2.5">
+              <span className="text-sm font-bold tracking-wider text-[var(--spatial-text-primary)]">
+                PRZEGRÓDKA
+              </span>
+
+              <div className="h-4 w-[1px] bg-[var(--spatial-divider)]" />
+
+              <div className="flex items-center gap-3 font-mono text-xs text-[var(--spatial-text-secondary)]">
+                <DimInput
+                  label="W"
+                  value={boxWidth}
+                  onChange={(v) => setBoxDimensions({ width: v })}
+                />
+                <DimInput
+                  label="L"
+                  value={boxHeight}
+                  onChange={(v) => setBoxDimensions({ height: v })}
+                />
+                <DimInput
+                  label="H"
+                  value={boxDepth}
+                  onChange={(v) => setBoxDimensions({ depth: v })}
+                />
+              </div>
+
+              <div className="h-4 w-[1px] bg-[var(--spatial-divider)]" />
+
+              <div className="flex rounded-full bg-[var(--spatial-toggle-track)] p-1">
+                <ViewPill
+                  active={is2d}
+                  onClick={() => {
+                    setViewMode("2d");
+                    setExplodedView(false);
+                  }}
+                >
+                  2D
+                </ViewPill>
+                <ViewPill
+                  active={is3d}
+                  onClick={() => {
+                    setViewMode("3d");
+                    setExplodedView(false);
+                  }}
+                >
+                  3D
+                </ViewPill>
+                <ViewPill
+                  active={isExploded}
+                  onClick={() => {
+                    setViewMode("3d");
+                    setExplodedView(true);
+                  }}
+                >
+                  EXP
+                </ViewPill>
+              </div>
+
+              <div className="h-4 w-[1px] bg-[var(--spatial-divider)]" />
+
+              <ThemeToggle />
+              <GamePresetPicker iconOnly />
+              <ShareButton />
+            </GlassPanel>
+          </WidgetEntrance>
+
+          {/* Widget B: Left palette */}
+          <WidgetEntrance
+            delay={0.15}
+            className="absolute left-[32px] top-[50%] z-40 w-[300px] -translate-y-1/2"
+          >
+            <GlassPanel className="flex max-h-[70vh] flex-col gap-4 p-5">
+              <ModuleLibrary />
+            </GlassPanel>
+          </WidgetEntrance>
+
+          {/* Widget C: Right dashboard */}
+          <WidgetEntrance
+            delay={0.2}
+            className="absolute bottom-[32px] right-[32px] z-40 w-[340px]"
+          >
+            <GlassPanel className="flex flex-col gap-4 p-5">
+              <SummaryPanel />
+            </GlassPanel>
+          </WidgetEntrance>
+        </div>
+      </main>
 
       <DragOverlay dropAnimation={null}>
         <DragGhostChip />
@@ -335,12 +400,12 @@ function DragGhostChip() {
   const m = getModule(ghost.moduleId);
   return (
     <div
-      className="pointer-events-none rounded-md border border-white/30 px-2.5 py-1.5 font-mono text-[11px] text-white shadow-2xl backdrop-blur"
+      className="pointer-events-none rounded-lg border border-[var(--spatial-surface-border)] px-3 py-2 font-mono text-[11px] text-[var(--spatial-text-primary)] shadow-[0_24px_48px_var(--spatial-shadow-heavy),0_8px_20px_rgba(255,140,0,0.35)]"
       style={{
-        background: `linear-gradient(135deg, ${m.color}cc, ${m.color}88)`,
+        background: `linear-gradient(135deg, ${m.color}dd, ${m.color}99)`,
       }}
     >
-      {m.name} · {formatMm(ghost.w)}×{formatMm(ghost.h)}mm
+      {m.name} · {formatMm(ghost.w)}×{formatMm(ghost.h)} mm
     </div>
   );
 }
@@ -365,15 +430,15 @@ function ShareButton() {
     const url = buildShareUrl(shareable);
 
     if (isShareUrlTooLong(url)) {
-      toast.warning("Configuration too large to share via URL. Try reducing modules.");
+      toast.warning("Konfiguracja jest zbyt duża, aby udostępnić ją przez link.");
       return;
     }
 
     try {
       await navigator.clipboard.writeText(url);
-      toast.success("Link copied to clipboard! 🔗");
+      toast.success("Link skopiowany!");
     } catch {
-      toast.error("Could not copy link to clipboard.");
+      toast.error("Nie udało się skopiować linku.");
     }
   };
 
@@ -381,76 +446,31 @@ function ShareButton() {
     <button
       type="button"
       onClick={() => void handleShare()}
-      title="Share configuration link"
-      className="flex items-center gap-1.5 rounded-full border border-panel-border bg-card/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:text-foreground"
+      title="Udostępnij link"
+      className="text-[var(--spatial-icon)] transition-colors hover:text-[var(--spatial-accent)]"
     >
-      <Link2 className="h-3.5 w-3.5" />
-      Share
+      <Link2 size={16} />
     </button>
   );
 }
 
-function ExplodedViewToggle({
-  active,
-  onChange,
-}: {
-  active: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!active)}
-      className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
-        active
-          ? "btn-primary-glow border-primary/50 text-primary-foreground"
-          : "border-panel-border bg-card/60 text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      <UnfoldVertical className="h-3.5 w-3.5" />
-      Exploded
-    </button>
-  );
-}
-
-function ViewToggle({
-  value,
-  onChange,
-}: {
-  value: "2d" | "3d";
-  onChange: (v: "2d" | "3d") => void;
-}) {
-  return (
-    <div className="relative flex items-center rounded-full border border-panel-border bg-card/60 p-1 text-xs font-medium">
-      <ToggleButton active={value === "2d"} onClick={() => onChange("2d")}>
-        <BoxIcon className="h-3.5 w-3.5" />
-        2D
-      </ToggleButton>
-      <ToggleButton active={value === "3d"} onClick={() => onChange("3d")}>
-        <Layers3 className="h-3.5 w-3.5" />
-        3D
-      </ToggleButton>
-    </div>
-  );
-}
-
-function ToggleButton({
+function ViewPill({
   active,
   onClick,
   children,
 }: {
   active: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-all ${
+      className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
         active
-          ? "btn-primary-glow text-primary-foreground"
-          : "text-muted-foreground hover:text-foreground"
+          ? "bg-[var(--spatial-accent)] text-black shadow-[0_0_12px_rgba(255,140,0,0.6)]"
+          : "text-[var(--spatial-view-inactive)] hover:text-[var(--spatial-text-primary)]"
       }`}
     >
       {children}
@@ -467,7 +487,7 @@ function DimInput({
   value: number;
   onChange: (v: number) => void;
 }) {
-  const [local, setLocal] = useState<string>(String(value));
+  const [local, setLocal] = useState(String(value));
   useEffect(() => setLocal(String(value)), [value]);
   const commit = () => {
     const n = parseFloat(local.replace(",", "."));
@@ -480,8 +500,8 @@ function DimInput({
     setLocal(String(clamped));
   };
   return (
-    <label className="flex items-center gap-1.5 rounded-md border border-panel-border bg-card/60 px-2 py-1 text-foreground transition-colors focus-within:border-primary/60">
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+    <span>
+      {label}{" "}
       <input
         type="number"
         min={MIN_BOX_MM}
@@ -493,9 +513,8 @@ function DimInput({
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
         }}
-        className="w-14 bg-transparent text-right font-mono text-xs outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        className="w-10 border-b border-[var(--spatial-accent-muted)] bg-transparent text-center text-[var(--spatial-accent)] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
       />
-      <span className="text-[10px] text-muted-foreground/70">mm</span>
-    </label>
+    </span>
   );
 }
